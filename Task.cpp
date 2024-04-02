@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <sys/epoll.h>
 #include <span>
-
+uint64_t Task::counter = 0;
 Mutex::Mutex() : waker(std::make_unique<FifoWaker>()) {}
 ConditionVariable::ConditionVariable() : waker(std::make_unique<FifoWaker>()) {}
 StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unused]]) 
@@ -18,7 +18,7 @@ StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unuse
     }
     else
         return step_result::Wait(
-            step_result::Wait::task_automatically_done, 
+            step_result::Wait::task_not_done, 
             step_result::WaitForWaker(*mutex.waker.get()));
 }
 
@@ -31,25 +31,23 @@ StepResult RcMutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unu
     }
     else
         return step_result::Wait(
-            step_result::Wait::task_automatically_done,
+            step_result::Wait::task_not_done,
             step_result::WaitForWaker(*mutex->waker.get()));
 }
 
 StepResult MutexReleaseTask::step(SingleThreadedExecutor &executor)
 {
+    mutex.is_acquired = false;
     if (mutex.waker->has_waiters())
         mutex.waker->wake_one(executor);
-    else
-        mutex.is_acquired = false;
     return step_result::Done();
 }
 
 StepResult RcMutexReleaseTask::step(SingleThreadedExecutor &executor)
 {
+    mutex->is_acquired = false;
     if (mutex->waker->has_waiters())
         mutex->waker->wake_one(executor);
-    else
-        mutex->is_acquired = false;
     return step_result::Done();
 }
 
@@ -75,10 +73,9 @@ StepResult RcConditionVariableWaitTask::step(SingleThreadedExecutor &executor)
     switch (stage++)
     {
     case 0:
+        mutex->is_acquired = false;
         if (mutex->waker->has_waiters())
             mutex->waker->wake_one(executor);
-        else
-            mutex->is_acquired = false;
         return step_result::Wait(
             step_result::Wait::task_not_done, 
             step_result::WaitForWaker(*cv->waker.get()));

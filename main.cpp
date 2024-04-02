@@ -1,9 +1,8 @@
+#include "declarations.h"
 #include "CoroutineTask.h"
 #include "Executor.h"
-#include "Promise.h"
 #include "StepResult.h"
 #include "Task.h"
-#include "declarations.h"
 #include <algorithm>
 #include <coroutine>
 #include <cstdlib>
@@ -487,13 +486,19 @@ class MainTask final : public Task
 
 namespace queue_coroutine_test
 {
-struct DequeueTaskPromiseType;
-using DequeueTask = CoroutineTask<DequeueTaskPromiseType>;
+struct DequeueTask;
 struct DequeueTaskPromiseType final
     : PromiseType<DequeueTaskPromiseType, DequeueTask>
 {
     static std::string get_name() { return "DequeueTaskPromiseType"; }
 };
+struct DequeueTask final : public CoroutineTask<DequeueTaskPromiseType>
+{
+    DequeueTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
+};
+
 std::unique_ptr<DequeueTask> dequeue_task(Rc<MutexCvObject<std::queue<int>>> queue)
 {
     co_yield step_result::Wait(
@@ -509,13 +514,19 @@ std::unique_ptr<DequeueTask> dequeue_task(Rc<MutexCvObject<std::queue<int>>> que
             step_result::Wait::task_automatically_done,
             make_vector_unique<Task>(RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
 }
-struct EnqueueTaskPromiseType;
-using EnqueueTask = CoroutineTask<EnqueueTaskPromiseType>;
+struct EnqueueTask;
 struct EnqueueTaskPromiseType final
     : PromiseType<EnqueueTaskPromiseType, EnqueueTask>
 {
     static std::string get_name() { return "EnqueueTaskPromiseType"; }
 };
+struct EnqueueTask final : public CoroutineTask<EnqueueTaskPromiseType> 
+{
+    EnqueueTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
+};
+
 std::unique_ptr<EnqueueTask> enqueue_task(Rc<MutexCvObject<std::queue<int>>> queue,
                                           int element)
 {
@@ -528,12 +539,17 @@ std::unique_ptr<EnqueueTask> enqueue_task(Rc<MutexCvObject<std::queue<int>>> que
             step_result::Wait::task_automatically_done,
             make_vector_unique<Task>(RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
 }
-struct EnqueueTaskChainPromiseType;
-using EnqueueTaskChain = CoroutineTask<EnqueueTaskPromiseType>;
+struct EnqueueTaskChain;
 struct EnqueueTaskChainPromiseType final
     : PromiseType<EnqueueTaskChainPromiseType, EnqueueTaskChain>
 {
     static std::string get_name() { return "EnqueueTaskChainPromiseType"; }
+};
+struct EnqueueTaskChain final : public CoroutineTask<EnqueueTaskChainPromiseType>
+{
+    EnqueueTaskChain(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
 };
 
 std::unique_ptr<EnqueueTaskChain>
@@ -556,12 +572,18 @@ enqueue_task_chain(Rc<MutexCvObject<std::queue<int>>> queue,
             
 }
 
-struct MainTaskPromiseType;
-using MainTask = CoroutineTask<MainTaskPromiseType>;
+struct MainTask;
 struct MainTaskPromiseType final : PromiseType<MainTaskPromiseType, MainTask>
 {
     static std::string get_name() { return "MainTask"; }
 };
+struct MainTask final : public CoroutineTask<MainTaskPromiseType>
+{
+    MainTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
+};
+
 
 std::unique_ptr<MainTask> main_task()
 {
@@ -591,6 +613,77 @@ std::unique_ptr<MainTask> main_task()
 }
 } // namespace queue_coroutine_test
 
+namespace return_type_test
+{
+template <typename ReturnTypeT>
+class ReturnTask final : public Task
+{
+    ReturnTypeT return_value;
+public:
+    using UnambiguousReturnType = ReturnTypeT;
+    ReturnTask(ReturnTypeT return_value = {})
+        : Task("ReturnTask"), return_value(std::move(return_value))
+    {}
+    
+    StepResult step(SingleThreadedExecutor &executor) override
+    {
+        return step_result::Done(std::make_unique<ReturnTypeT>(std::move(return_value)));
+    }
+};
+
+template <typename ReturnTypeT>
+struct CoroReturnTask;
+template <typename ReturnTypeT>
+struct CoroReturnTaskPromiseType final : public PromiseTypeWithReturnValue<CoroReturnTaskPromiseType<ReturnTypeT>, CoroReturnTask<ReturnTypeT>>
+{
+    static std::string get_name()
+    {
+        return "CoroReturnTaskPromiseType";
+    }
+};
+
+template <typename ReturnTypeT>
+struct CoroReturnTask final : public CoroutineTask<CoroReturnTaskPromiseType<ReturnTypeT>>
+{
+    using promise_type = CoroReturnTaskPromiseType<ReturnTypeT>;
+    using UnambiguousReturnType = ReturnTypeT;
+    CoroReturnTask(std::string name, promise_type &promise)
+        : CoroutineTask<CoroReturnTaskPromiseType<ReturnTypeT>>(std::move(name), promise)
+    {}
+};
+
+template <typename ReturnTypeT>
+std::unique_ptr<CoroReturnTask<ReturnTypeT>> return_task(ReturnTypeT return_value)
+{
+    co_return std::make_unique<ReturnTypeT>(std::move(return_value));
+}
+
+struct MainTask;
+struct MainTaskPromiseType final : PromiseType<MainTaskPromiseType, MainTask>
+{
+    static std::string get_name() { return "MainTask"; }
+};
+struct MainTask final : public CoroutineTask<MainTaskPromiseType>
+{
+    MainTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
+};
+
+std::unique_ptr<MainTask>
+main_task()
+{
+    {
+        std::unique_ptr<std::string> ret_val = co_await std::make_unique<ReturnTask<std::string>>("Hello");
+        std::cout << *ret_val << '\n';
+    }
+    {
+        std::unique_ptr<std::string> ret_val = co_await return_task<std::string>("world");
+        std::cout << *ret_val << '\n';
+    }
+}
+}
+
 void test1()
 {
     using namespace queue_test;
@@ -618,8 +711,16 @@ void test3()
     executor.run_until_completion();
 }
 
+void test4()
+{
+    using namespace return_type_test;
+    SingleThreadedExecutor executor;
+    executor.add_task(main_task());
+    executor.run_until_completion();
+}
+
 int main()
 {
-    test1();
+    test4();
     return EXIT_SUCCESS;
 }

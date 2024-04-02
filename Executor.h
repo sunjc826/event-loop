@@ -57,8 +57,5 @@ public:
     void run_until_completion();
 };
 
-// TODO
-class SingleThreadedCoroutineExecutor
-{
-
-};
+// We may want to implement abstract class Executor in future
+using Executor = SingleThreadedExecutor;

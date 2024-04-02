@@ -82,7 +82,7 @@ ExecutorStepResult SingleThreadedExecutor::step()
     }
     std::unique_ptr<Task> task = std::move(tasks.front());
     tasks.pop_front();
-    StepResult result = task->step(*this, std::move(task->child_return_values));
+    StepResult result = task->step(*this, std::move(task->last_child_return_values));
     std::optional<std::unique_ptr<void, TypeErasedDeleter>> return_value;
     if (auto *done = std::get_if<step_result::Done>(&result))
     {
@@ -108,12 +108,12 @@ ExecutorStepResult SingleThreadedExecutor::step()
 
             Counter counter(*this, std::make_unique<SingleTaskWaker>(), wait_for_child_tasks->tasks.size());
             auto &waker = counter.get_waker();
-            task->child_return_values.clear();
-            task->child_return_values.resize(wait_for_child_tasks->tasks.size());
+            task->last_child_return_values.clear();
+            task->last_child_return_values.resize(wait_for_child_tasks->tasks.size());
             for (size_t i = wait_for_child_tasks->tasks.size(); i --> 0;)
             {
                 std::unique_ptr<Task> &child_task = wait_for_child_tasks->tasks[i];
-                child_task->parent_return_value_location = &task->child_return_values[i];
+                child_task->parent_return_value_location = &task->last_child_return_values[i];
                 if (i == 0)
                     child_task->on_done_callbacks.push_back(std::move(counter));
                 else
@@ -148,4 +148,5 @@ void SingleThreadedExecutor::run_until_completion()
         print_tasks();
     }
 }
+
 
