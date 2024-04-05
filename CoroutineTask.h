@@ -170,7 +170,7 @@ struct CoroMutexAcquireTask final : CoroutineTask<CoroMutexAcquireTaskPromise>
     {}
 };
 
-std::unique_ptr<CoroMutexAcquireTask> mutex_acquire_task();
+std::unique_ptr<CoroMutexAcquireTask> mutex_acquire_task(Rc<Mutex> mutex);
 
 struct CoroMutexReleaseTask;
 struct CoroMutexReleaseTaskPromise final : PromiseType<CoroMutexReleaseTaskPromise, CoroMutexReleaseTask>
@@ -186,4 +186,36 @@ struct CoroMutexReleaseTask : public CoroutineTask<CoroMutexReleaseTaskPromise>
         : CoroutineTask(std::move(name), promise)
     {}
 };
-std::unique_ptr<CoroMutexReleaseTask> mutex_release_task();
+std::unique_ptr<CoroMutexReleaseTask> mutex_release_task(Rc<Mutex> mutex);
+
+struct CoroConditionVariableWaitTask;
+struct CoroConditionVariableWaitTaskPromise final : PromiseType<CoroConditionVariableWaitTaskPromise, CoroConditionVariableWaitTask>
+{
+    static std::string get_name()
+    {
+        return "CoroConditionVariableWaitTaskPromise";
+    }
+};
+struct CoroConditionVariableWaitTask : public CoroutineTask<CoroConditionVariableWaitTaskPromise>
+{
+    CoroConditionVariableWaitTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
+};
+std::unique_ptr<CoroConditionVariableWaitTask> condition_variable_wait_task(Rc<Mutex> mutex, Rc<ConditionVariable> cv);
+
+struct CoroConditionVariableNotifyTask;
+struct CoroConditionVariableNotifyTaskPromise final : PromiseType<CoroConditionVariableNotifyTaskPromise, CoroConditionVariableNotifyTask>
+{
+    static std::string get_name()
+    {
+        return "CoroConditionVariableNotifyTaskPromise";
+    }
+};
+struct CoroConditionVariableNotifyTask : public CoroutineTask<CoroConditionVariableNotifyTaskPromise>
+{
+    CoroConditionVariableNotifyTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {}
+};
+std::unique_ptr<CoroConditionVariableNotifyTask> condition_variable_notify_task(bool notify_all, Rc<ConditionVariable> cv);

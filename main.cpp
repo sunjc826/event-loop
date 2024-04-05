@@ -503,20 +503,20 @@ std::unique_ptr<DequeueTask>
 dequeue_task(Rc<MutexCvObject<std::queue<int>>> queue)
 {
     co_yield step_result::Wait(step_result::Wait::task_not_done,
-                               make_vector_unique<Task>(RcMutexAcquireTask(
+                               make_vector_unique<Task>(mutex_acquire_task(
                                    Rc<Mutex>(queue, &queue->mutex))));
 
     if (queue->object.empty())
     {
         co_yield step_result::Done(make_vector_unique<Task>(
-            RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+            mutex_release_task(Rc<Mutex>(queue, &queue->mutex))));
         co_return;
     }
     int element = queue->object.front();
     queue->object.pop();
     std::cerr << "Pop: " << element << '\n';
     co_yield step_result::Wait(step_result::Wait::task_automatically_done,
-                               make_vector_unique<Task>(RcMutexReleaseTask(
+                               make_vector_unique<Task>(mutex_release_task(
                                    Rc<Mutex>(queue, &queue->mutex))));
 }
 
@@ -537,20 +537,20 @@ std::unique_ptr<GuaranteedDequeueTask>
 guaranteed_dequeue_task(Rc<MutexCvObject<std::queue<int>>> queue)
 {
     co_yield step_result::Wait(step_result::Wait::task_not_done,
-                               make_vector_unique<Task>(RcMutexAcquireTask(
+                               make_vector_unique<Task>(mutex_acquire_task(
                                    Rc<Mutex>(queue, &queue->mutex))));
 
     while (queue->object.empty())
         co_yield step_result::Wait(
             step_result::Wait::task_not_done,
-            make_vector_unique<Task>(RcConditionVariableWaitTask(
+            make_vector_unique<Task>(condition_variable_wait_task(
                 Rc<Mutex>(queue, &queue->mutex),
                 Rc<ConditionVariable>(queue, &queue->cv))));
     int element = queue->object.front();
     queue->object.pop();
     std::cerr << "Pop: " << element << '\n';
     co_yield step_result::Done(make_vector_unique<Task>(
-        RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+        mutex_release_task(Rc<Mutex>(queue, &queue->mutex))));
 }
 
 struct EnqueueTask;
@@ -571,15 +571,15 @@ std::unique_ptr<EnqueueTask>
 enqueue_task(Rc<MutexCvObject<std::queue<int>>> queue, int element)
 {
     co_yield step_result::Wait(step_result::Wait::task_not_done,
-                               make_vector_unique<Task>(RcMutexAcquireTask(
+                               make_vector_unique<Task>(mutex_acquire_task(
                                    Rc<Mutex>(queue, &queue->mutex))));
 
     queue->object.push(element);
     co_yield step_result::Wait(
         step_result::Wait::task_automatically_done,
         make_vector_unique<Task>(
-            RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
-            RcConditionVariableNotifyTask(
+            mutex_release_task(Rc<Mutex>(queue, &queue->mutex)),
+            condition_variable_notify_task(
                 true, Rc<ConditionVariable>(queue, &queue->cv))));
 }
 struct EnqueueTaskChain;
@@ -612,8 +612,8 @@ enqueue_task_chain(Rc<MutexCvObject<std::queue<int>>> queue,
     }
 
     co_yield step_result::Done(make_vector_unique<Task>(
-        RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
-        RcConditionVariableNotifyTask(
+        mutex_release_task(Rc<Mutex>(queue, &queue->mutex)),
+        condition_variable_notify_task(
             true, Rc<ConditionVariable>(queue, &queue->cv))));
 }
 
