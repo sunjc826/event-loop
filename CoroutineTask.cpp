@@ -17,9 +17,8 @@ std::unique_ptr<CoroMutexAcquireTask> mutex_acquire_task(Rc<Mutex> mutex)
 
 std::unique_ptr<CoroMutexReleaseTask> mutex_release_task(Rc<Mutex> mutex)
 {
+    mutex->is_acquired = false;
     if (mutex->waker->has_waiters())
         mutex->waker->wake_one(co_await executor_awaiter);
-    else
-        mutex->is_acquired = false;
     co_yield step_result::Done();
 }

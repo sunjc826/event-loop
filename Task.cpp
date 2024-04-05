@@ -55,10 +55,9 @@ StepResult ConditionVariableWaitTask::step(SingleThreadedExecutor &executor)
     switch (stage++)
     {
     case 0:
+        mutex.is_acquired = false;
         if (mutex.waker->has_waiters())
             mutex.waker->wake_one(executor);
-        else
-            mutex.is_acquired = false;
         return step_result::Wait(step_result::Wait::task_not_done, step_result::WaitForWaker(*cv.waker.get()));
     case 1:
         return step_result::Wait(step_result::Wait::task_automatically_done, step_result::WaitForChildTasks(make_vector_unique<Task>(MutexAcquireTask(mutex))));

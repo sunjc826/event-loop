@@ -1,8 +1,8 @@
-#include "declarations.h"
 #include "CoroutineTask.h"
 #include "Executor.h"
 #include "StepResult.h"
 #include "Task.h"
+#include "declarations.h"
 #include <algorithm>
 #include <cerrno>
 #include <coroutine>
@@ -132,9 +132,7 @@ class EnqueueTask final : public Task
                 step_result::Wait::task_automatically_done,
                 make_vector_unique<Task>(
                     MutexReleaseTask(queue.mutex),
-                    ConditionVariableNotifyTask(true, queue.cv)
-                )
-            );
+                    ConditionVariableNotifyTask(true, queue.cv)));
         }
         default:
             throw std::runtime_error("Unreachable");
@@ -144,7 +142,8 @@ class EnqueueTask final : public Task
 template <bool chain_mode>
 class EnqueueTaskChain final : public Task
 {
-    template <bool> friend class EnqueueTaskChain;
+    template <bool>
+    friend class EnqueueTaskChain;
     MutexCvObject<std::queue<int>> &queue;
     std::vector<int> stack;
     enum Stage
@@ -189,10 +188,8 @@ class EnqueueTaskChain final : public Task
                 return step_result::Wait(
                     step_result::Wait::task_automatically_done,
                     make_vector_unique<Task>(
-                        MutexReleaseTask(queue.mutex), 
-                        ConditionVariableNotifyTask(true, queue.cv)
-                    )
-                );
+                        MutexReleaseTask(queue.mutex),
+                        ConditionVariableNotifyTask(true, queue.cv)));
             int element = stack.back();
             queue.object.push(element);
             stack.pop_back();
@@ -243,9 +240,8 @@ class MainTask final : public Task
             std::vector<std::unique_ptr<Task>> tasks;
             for (int i = 0; i < 18; ++i)
                 tasks.push_back(std::make_unique<GuaranteedDequeueTask>(queue));
-            return step_result::Wait(
-                step_result::Wait::task_automatically_done,
-                std::move(tasks));
+            return step_result::Wait(step_result::Wait::task_automatically_done,
+                                     std::move(tasks));
         }
         default:
             throw std::runtime_error("Unreachable");
@@ -274,7 +270,8 @@ class DequeueTask final : public Task
         {
             return step_result::Wait(
                 step_result::Wait::task_not_done,
-                make_vector_unique<Task>(RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
+                make_vector_unique<Task>(
+                    RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
         }
         case 1:
         {
@@ -284,8 +281,8 @@ class DequeueTask final : public Task
                 queue->object.pop();
                 std::cerr << "Pop: " << element << '\n';
             }
-            return step_result::Done(
-                make_vector_unique<Task>(RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+            return step_result::Done(make_vector_unique<Task>(
+                RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
         }
         default:
             throw std::runtime_error("Unreachable");
@@ -316,20 +313,22 @@ class GuaranteedDequeueTask final : public Task
             state = State::dequeuing;
             return step_result::Wait(
                 step_result::Wait::task_not_done,
-                make_vector_unique<Task>(RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
+                make_vector_unique<Task>(
+                    RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
         }
         case State::dequeuing:
         {
             if (queue->object.empty())
                 return step_result::Wait(
                     step_result::Wait::task_not_done,
-                    make_vector_unique<Task>(
-                        RcConditionVariableWaitTask(Rc<Mutex>(queue, &queue->mutex), Rc<ConditionVariable>(queue, &queue->cv))));
+                    make_vector_unique<Task>(RcConditionVariableWaitTask(
+                        Rc<Mutex>(queue, &queue->mutex),
+                        Rc<ConditionVariable>(queue, &queue->cv))));
             int element = queue->object.front();
             queue->object.pop();
             std::cerr << "Pop: " << element << '\n';
-            return step_result::Done(
-                make_vector_unique<Task>(RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+            return step_result::Done(make_vector_unique<Task>(
+                RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
         }
         default:
             throw std::runtime_error("Unreachable");
@@ -355,17 +354,16 @@ class EnqueueTask final : public Task
         {
             return step_result::Wait(
                 step_result::Wait::task_not_done,
-                make_vector_unique<Task>(RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
+                make_vector_unique<Task>(
+                    RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
         }
         case 1:
         {
             queue->object.push(element);
-            return step_result::Done(
-                make_vector_unique<Task>(
-                    RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
-                    RcConditionVariableNotifyTask(true, Rc<ConditionVariable>(queue, &queue->cv))
-                )
-            );
+            return step_result::Done(make_vector_unique<Task>(
+                RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
+                RcConditionVariableNotifyTask(
+                    true, Rc<ConditionVariable>(queue, &queue->cv))));
         }
         default:
             throw std::runtime_error("Unreachable");
@@ -375,7 +373,8 @@ class EnqueueTask final : public Task
 template <bool chain_mode>
 class EnqueueTaskChain final : public Task
 {
-    template <bool> friend class EnqueueTaskChain;
+    template <bool>
+    friend class EnqueueTaskChain;
 
     Rc<MutexCvObject<std::queue<int>>> queue;
     std::vector<int> stack;
@@ -389,8 +388,8 @@ class EnqueueTaskChain final : public Task
   public:
     EnqueueTaskChain(Rc<MutexCvObject<std::queue<int>>> queue,
                      std::vector<int> stack, Stage stage)
-        : Task("EnqueueTaskChain"), queue(std::move(queue)), stack(std::move(stack)),
-          stage(stage)
+        : Task("EnqueueTaskChain"), queue(std::move(queue)),
+          stack(std::move(stack)), stage(stage)
     {
     }
     static std::unique_ptr<EnqueueTaskChain>
@@ -413,25 +412,22 @@ class EnqueueTaskChain final : public Task
             stage = Stage::enqueue;
             return step_result::Wait(
                 step_result::Wait::task_not_done,
-                make_vector_unique<Task>(RcMutexAcquireTask(
-                    Rc<Mutex>(queue, &queue->mutex))));
+                make_vector_unique<Task>(
+                    RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
         }
         case Stage::enqueue:
         {
             if (stack.empty())
-                return step_result::Done(
-                    make_vector_unique<Task>(
-                        RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
-                        RcConditionVariableNotifyTask(true, Rc<ConditionVariable>(queue, &queue->cv))
-                    )
-                );
+                return step_result::Done(make_vector_unique<Task>(
+                    RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
+                    RcConditionVariableNotifyTask(
+                        true, Rc<ConditionVariable>(queue, &queue->cv))));
             int element = stack.back();
             queue->object.push(element);
             stack.pop_back();
             if constexpr (chain_mode)
-                return step_result::Done(
-                    make_vector_unique<Task>(EnqueueTaskChain(
-                        queue, std::move(stack), Stage::enqueue)));
+                return step_result::Done(make_vector_unique<Task>(
+                    EnqueueTaskChain(queue, std::move(stack), Stage::enqueue)));
             else
                 return step_result::Ready();
         }
@@ -446,7 +442,10 @@ class MainTask final : public Task
     Rc<MutexCvObject<std::queue<int>>> queue;
 
   public:
-    MainTask() : Task("MainTask"), queue(Rc<MutexCvObject<std::queue<int>>>::create()) {}
+    MainTask()
+        : Task("MainTask"), queue(Rc<MutexCvObject<std::queue<int>>>::create())
+    {
+    }
     StepResult step(SingleThreadedExecutor &executor) override
     {
         switch (state++)
@@ -475,8 +474,7 @@ class MainTask final : public Task
             for (int i = 0; i < 18; ++i)
                 tasks.push_back(std::make_unique<GuaranteedDequeueTask>(queue));
             /* Notice that because we use Rc, this is safe */
-            return step_result::Done(
-                std::move(tasks));
+            return step_result::Done(std::move(tasks));
         }
         default:
             throw std::runtime_error("Unreachable");
@@ -497,48 +495,92 @@ struct DequeueTask final : public CoroutineTask<DequeueTaskPromiseType>
 {
     DequeueTask(std::string name, promise_type &promise)
         : CoroutineTask(std::move(name), promise)
-    {}
+    {
+    }
 };
 
-std::unique_ptr<DequeueTask> dequeue_task(Rc<MutexCvObject<std::queue<int>>> queue)
+std::unique_ptr<DequeueTask>
+dequeue_task(Rc<MutexCvObject<std::queue<int>>> queue)
 {
-    co_yield step_result::Wait(
-        step_result::Wait::task_not_done,
-        make_vector_unique<Task>(RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
-    
+    co_yield step_result::Wait(step_result::Wait::task_not_done,
+                               make_vector_unique<Task>(RcMutexAcquireTask(
+                                   Rc<Mutex>(queue, &queue->mutex))));
+
     if (queue->object.empty())
+    {
+        co_yield step_result::Done(make_vector_unique<Task>(
+            RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
         co_return;
+    }
     int element = queue->object.front();
     queue->object.pop();
     std::cerr << "Pop: " << element << '\n';
-    co_yield step_result::Wait(
-            step_result::Wait::task_automatically_done,
-            make_vector_unique<Task>(RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+    co_yield step_result::Wait(step_result::Wait::task_automatically_done,
+                               make_vector_unique<Task>(RcMutexReleaseTask(
+                                   Rc<Mutex>(queue, &queue->mutex))));
 }
+
+struct GuaranteedDequeueTask;
+struct GuaranteedDequeueTaskPromiseType final
+    : PromiseType<GuaranteedDequeueTaskPromiseType, GuaranteedDequeueTask>
+{
+    static std::string get_name() { return "GuaranteedDequeueTaskPromiseType"; }
+};
+struct GuaranteedDequeueTask : CoroutineTask<GuaranteedDequeueTaskPromiseType>
+{
+    GuaranteedDequeueTask(std::string name, promise_type &promise)
+        : CoroutineTask(std::move(name), promise)
+    {
+    }
+};
+std::unique_ptr<GuaranteedDequeueTask>
+guaranteed_dequeue_task(Rc<MutexCvObject<std::queue<int>>> queue)
+{
+    co_yield step_result::Wait(step_result::Wait::task_not_done,
+                               make_vector_unique<Task>(RcMutexAcquireTask(
+                                   Rc<Mutex>(queue, &queue->mutex))));
+
+    while (queue->object.empty())
+        co_yield step_result::Wait(
+            step_result::Wait::task_not_done,
+            make_vector_unique<Task>(RcConditionVariableWaitTask(
+                Rc<Mutex>(queue, &queue->mutex),
+                Rc<ConditionVariable>(queue, &queue->cv))));
+    int element = queue->object.front();
+    queue->object.pop();
+    std::cerr << "Pop: " << element << '\n';
+    co_yield step_result::Done(make_vector_unique<Task>(
+        RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+}
+
 struct EnqueueTask;
 struct EnqueueTaskPromiseType final
     : PromiseType<EnqueueTaskPromiseType, EnqueueTask>
 {
     static std::string get_name() { return "EnqueueTaskPromiseType"; }
 };
-struct EnqueueTask final : public CoroutineTask<EnqueueTaskPromiseType> 
+struct EnqueueTask final : public CoroutineTask<EnqueueTaskPromiseType>
 {
     EnqueueTask(std::string name, promise_type &promise)
         : CoroutineTask(std::move(name), promise)
-    {}
+    {
+    }
 };
 
-std::unique_ptr<EnqueueTask> enqueue_task(Rc<MutexCvObject<std::queue<int>>> queue,
-                                          int element)
+std::unique_ptr<EnqueueTask>
+enqueue_task(Rc<MutexCvObject<std::queue<int>>> queue, int element)
 {
-    co_yield step_result::Wait(
-        step_result::Wait::task_not_done,
-        make_vector_unique<Task>(RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
-    
+    co_yield step_result::Wait(step_result::Wait::task_not_done,
+                               make_vector_unique<Task>(RcMutexAcquireTask(
+                                   Rc<Mutex>(queue, &queue->mutex))));
+
     queue->object.push(element);
     co_yield step_result::Wait(
-            step_result::Wait::task_automatically_done,
-            make_vector_unique<Task>(RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex))));
+        step_result::Wait::task_automatically_done,
+        make_vector_unique<Task>(
+            RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
+            RcConditionVariableNotifyTask(
+                true, Rc<ConditionVariable>(queue, &queue->cv))));
 }
 struct EnqueueTaskChain;
 struct EnqueueTaskChainPromiseType final
@@ -546,31 +588,33 @@ struct EnqueueTaskChainPromiseType final
 {
     static std::string get_name() { return "EnqueueTaskChainPromiseType"; }
 };
-struct EnqueueTaskChain final : public CoroutineTask<EnqueueTaskChainPromiseType>
+struct EnqueueTaskChain final
+    : public CoroutineTask<EnqueueTaskChainPromiseType>
 {
     EnqueueTaskChain(std::string name, promise_type &promise)
         : CoroutineTask(std::move(name), promise)
-    {}
+    {
+    }
 };
 
 std::unique_ptr<EnqueueTaskChain>
 enqueue_task_chain(Rc<MutexCvObject<std::queue<int>>> queue,
                    std::vector<int> elements_to_enqueue)
 {
-    co_yield step_result::Wait(
-        step_result::Wait::task_not_done,
-        make_vector_unique<Task>(RcMutexAcquireTask(Rc<Mutex>(queue, &queue->mutex))));
-    
+    co_yield step_result::Wait(step_result::Wait::task_not_done,
+                               make_vector_unique<Task>(RcMutexAcquireTask(
+                                   Rc<Mutex>(queue, &queue->mutex))));
+
     for (int element : elements_to_enqueue)
     {
         queue->object.push(element);
         co_yield step_result::Ready();
     }
 
-    co_yield step_result::Done(
-                    make_vector_unique<Task>(RcMutexReleaseTask(
-                        Rc<Mutex>(queue, &queue->mutex))));
-            
+    co_yield step_result::Done(make_vector_unique<Task>(
+        RcMutexReleaseTask(Rc<Mutex>(queue, &queue->mutex)),
+        RcConditionVariableNotifyTask(
+            true, Rc<ConditionVariable>(queue, &queue->cv))));
 }
 
 struct MainTask;
@@ -582,9 +626,9 @@ struct MainTask final : public CoroutineTask<MainTaskPromiseType>
 {
     MainTask(std::string name, promise_type &promise)
         : CoroutineTask(std::move(name), promise)
-    {}
+    {
+    }
 };
-
 
 std::unique_ptr<MainTask> main_task()
 {
@@ -595,8 +639,8 @@ std::unique_ptr<MainTask> main_task()
         auto chain3 =
             enqueue_task_chain(queue, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
         auto chain4 = enqueue_task(queue, 100);
-        auto dequeue1 = dequeue_task(queue);
-        auto dequeue2 = dequeue_task(queue);
+        auto dequeue1 = guaranteed_dequeue_task(queue);
+        auto dequeue2 = guaranteed_dequeue_task(queue);
         co_yield step_result::Wait(
             step_result::Wait::task_not_done,
             make_vector_unique<Task>(std::move(chain1), std::move(chain2),
@@ -606,10 +650,9 @@ std::unique_ptr<MainTask> main_task()
     {
         std::vector<std::unique_ptr<Task>> tasks;
         for (int i = 0; i < 18; ++i)
-            tasks.emplace_back(dequeue_task(queue));
-        co_yield step_result::Wait(
-            step_result::Wait::task_automatically_done,
-            std::move(tasks));
+            tasks.emplace_back(guaranteed_dequeue_task(queue));
+        co_yield step_result::Wait(step_result::Wait::task_automatically_done,
+                                   std::move(tasks));
     }
 }
 } // namespace queue_coroutine_test
@@ -620,41 +663,47 @@ template <typename ReturnTypeT>
 class ReturnTask final : public Task
 {
     ReturnTypeT return_value;
-public:
+
+  public:
     using UnambiguousReturnType = ReturnTypeT;
     ReturnTask(ReturnTypeT return_value = {})
         : Task("ReturnTask"), return_value(std::move(return_value))
-    {}
-    
+    {
+    }
+
     StepResult step(SingleThreadedExecutor &executor) override
     {
-        return step_result::Done(std::make_unique<ReturnTypeT>(std::move(return_value)));
+        return step_result::Done(
+            std::make_unique<ReturnTypeT>(std::move(return_value)));
     }
 };
 
 template <typename ReturnTypeT>
 struct CoroReturnTask;
 template <typename ReturnTypeT>
-struct CoroReturnTaskPromiseType final : public PromiseTypeWithReturnValue<CoroReturnTaskPromiseType<ReturnTypeT>, CoroReturnTask<ReturnTypeT>>
+struct CoroReturnTaskPromiseType final
+    : public PromiseTypeWithReturnValue<CoroReturnTaskPromiseType<ReturnTypeT>,
+                                        CoroReturnTask<ReturnTypeT>>
 {
-    static std::string get_name()
-    {
-        return "CoroReturnTaskPromiseType";
-    }
+    static std::string get_name() { return "CoroReturnTaskPromiseType"; }
 };
 
 template <typename ReturnTypeT>
-struct CoroReturnTask final : public CoroutineTask<CoroReturnTaskPromiseType<ReturnTypeT>>
+struct CoroReturnTask final
+    : public CoroutineTask<CoroReturnTaskPromiseType<ReturnTypeT>>
 {
     using promise_type = CoroReturnTaskPromiseType<ReturnTypeT>;
     using UnambiguousReturnType = ReturnTypeT;
     CoroReturnTask(std::string name, promise_type &promise)
-        : CoroutineTask<CoroReturnTaskPromiseType<ReturnTypeT>>(std::move(name), promise)
-    {}
+        : CoroutineTask<CoroReturnTaskPromiseType<ReturnTypeT>>(std::move(name),
+                                                                promise)
+    {
+    }
 };
 
 template <typename ReturnTypeT>
-std::unique_ptr<CoroReturnTask<ReturnTypeT>> return_task(ReturnTypeT return_value)
+std::unique_ptr<CoroReturnTask<ReturnTypeT>>
+return_task(ReturnTypeT return_value)
 {
     co_return std::make_unique<ReturnTypeT>(std::move(return_value));
 }
@@ -668,22 +717,24 @@ struct MainTask final : public CoroutineTask<MainTaskPromiseType>
 {
     MainTask(std::string name, promise_type &promise)
         : CoroutineTask(std::move(name), promise)
-    {}
+    {
+    }
 };
 
-std::unique_ptr<MainTask>
-main_task()
+std::unique_ptr<MainTask> main_task()
 {
     {
-        std::unique_ptr<std::string> ret_val = co_await std::make_unique<ReturnTask<std::string>>("Hello");
+        std::unique_ptr<std::string> ret_val =
+            co_await std::make_unique<ReturnTask<std::string>>("Hello");
         std::cout << *ret_val << '\n';
     }
     {
-        std::unique_ptr<std::string> ret_val = co_await return_task<std::string>("world");
+        std::unique_ptr<std::string> ret_val =
+            co_await return_task<std::string>("world");
         std::cout << *ret_val << '\n';
     }
 }
-}
+} // namespace return_type_test
 
 void test1()
 {
@@ -722,7 +773,7 @@ void test4()
 
 int main(int argc, char const **argv)
 {
-    std::array tests{ test1, test2, test3, test4 };
+    std::array tests{test1, test2, test3, test4};
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s <test_number>\n", program_invocation_name);
@@ -734,6 +785,6 @@ int main(int argc, char const **argv)
         fputs("Test number too big\n", stderr);
 
     tests[test_num]();
-    
+
     return EXIT_SUCCESS;
 }
