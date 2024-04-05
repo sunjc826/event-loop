@@ -43,7 +43,7 @@ class SingleThreadedExecutor
     std::deque<std::unique_ptr<Task>> tasks;
     bool is_sleeping_task_list_empty();
     size_t number_of_sleeping_tasks();
-    
+    void handle_wait(std::unique_ptr<Task>, step_result::Wait &);
     void add_sleeping_task(std::unique_ptr<Task> task, Waker &waker, bool destroy_on_wake);
 public:
     SingleThreadedExecutor()

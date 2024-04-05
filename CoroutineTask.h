@@ -142,6 +142,11 @@ struct CoroutineTask : public Task
             throw std::runtime_error("Should be present");
         return std::move(*handle.promise().step_result);
     }
+
+    ~CoroutineTask()
+    {
+        handle.destroy();
+    }
 };
 
 template <typename T, typename ...Args>

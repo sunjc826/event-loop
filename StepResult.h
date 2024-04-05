@@ -1,5 +1,6 @@
 #pragma once
 #include "declarations.h"
+#include <cstdint>
 
 namespace step_result
 {
@@ -23,17 +24,25 @@ namespace step_result
     };
     struct Ready
     {
+        // Go to front of executor rather than the back
+        bool high_priority = false;
         // The child tasks, if non-empty, can be viewed as daemons.
         std::vector<std::unique_ptr<Task>> child_tasks;
         Ready() = default;
+        Ready(bool high_priority)
+            : high_priority(high_priority)
+        {}
+        Ready(bool high_priority, std::vector<std::unique_ptr<Task>> child_tasks)
+            : high_priority(high_priority), child_tasks(std::move(child_tasks))
+        {}
         Ready(std::vector<std::unique_ptr<Task>> child_tasks)
             : child_tasks(std::move(child_tasks))
         {}
     };
     struct WaitForWaker
     {
-        std::reference_wrapper<Waker> waker;
-        WaitForWaker(std::reference_wrapper<Waker> waker) 
+        Waker &waker;
+        WaitForWaker(Waker &waker) 
             : waker(waker) 
         {}
     };
@@ -51,25 +60,47 @@ namespace step_result
             task_automatically_done,
             task_not_done,
         };
-        
-        // composite function support
-        std::optional<uint64_t> wait_task_id;
-
         OnWaitFinish on_wait_finish;
         std::variant<WaitForWaker, WaitForChildTasks> wait_for;
-        Wait(OnWaitFinish on_wait_finish, std::variant<WaitForWaker, WaitForChildTasks> wait_for, std::optional<uint64_t> wait_task_id = std::nullopt)
-            : wait_task_id(wait_task_id), on_wait_finish(on_wait_finish), wait_for(std::move(wait_for))
+        Wait(OnWaitFinish on_wait_finish, std::variant<WaitForWaker, WaitForChildTasks> wait_for)
+            : on_wait_finish(on_wait_finish), wait_for(std::move(wait_for))
         {}
 
-        Wait(OnWaitFinish on_wait_finish, std::vector<std::unique_ptr<Task>> child_tasks, std::optional<uint64_t> wait_task_id = std::nullopt)
-            : wait_task_id(wait_task_id), on_wait_finish(on_wait_finish), wait_for(WaitForChildTasks(std::move(child_tasks)))
+        Wait(OnWaitFinish on_wait_finish, std::vector<std::unique_ptr<Task>> child_tasks)
+            : on_wait_finish(on_wait_finish), wait_for(WaitForChildTasks(std::move(child_tasks)))
         {}
         
-        Wait(OnWaitFinish on_wait_finish, std::reference_wrapper<Waker> waker, std::optional<uint64_t> wait_task_id = std::nullopt)
-            : wait_task_id(wait_task_id), on_wait_finish(on_wait_finish), wait_for(WaitForWaker(waker))
+        Wait(OnWaitFinish on_wait_finish, std::reference_wrapper<Waker> waker)
+            : on_wait_finish(on_wait_finish), wait_for(WaitForWaker(waker))
+        {}
+    };
+
+    // Used by composite tasks
+    struct PartialWait
+    {
+        SubtaskStatus &status; 
+        Wait wait;
+        template <typename ...Args>
+        PartialWait(SubtaskStatus &status, Args &&...args)
+            : status(status), wait(std::forward<Args>(args)...)
+        {}
+    };
+    // Used by composite tasks
+    struct FullWait
+    {
+        SubtaskStatus &status; 
+        Wait wait;
+        template <typename ...Args>
+        FullWait(SubtaskStatus &status, Args &&...args)
+            : status(status), wait(std::forward<Args>(args)...)
         {}
     };
 }
 
-using StepResult = std::variant<step_result::Done, step_result::Ready, step_result::Wait>;
+using StepResult = std::variant<
+    step_result::Done, 
+    step_result::Ready, 
+    step_result::Wait, 
+    step_result::PartialWait, 
+    step_result::FullWait>;
 

@@ -15,10 +15,10 @@
 #include <optional>
 #include <concepts>
 #include "utilities.h"
-
 struct SleepingTask;
 struct Task;
 struct SingleThreadedExecutor;
+enum class SubtaskStatus;
 struct Waker;
 template <typename ChildT, typename CoroutineTaskT>
 struct PromiseType;

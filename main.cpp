@@ -4,6 +4,7 @@
 #include "StepResult.h"
 #include "Task.h"
 #include <algorithm>
+#include <cerrno>
 #include <coroutine>
 #include <cstdlib>
 #include <memory>
@@ -719,8 +720,20 @@ void test4()
     executor.run_until_completion();
 }
 
-int main()
+int main(int argc, char const **argv)
 {
-    test4();
+    std::array tests{ test1, test2, test3, test4 };
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage: %s <test_number>\n", program_invocation_name);
+        exit(EXIT_FAILURE);
+    }
+
+    size_t test_num = std::strtoul(argv[1], nullptr, 10);
+    if (test_num >= tests.size())
+        fputs("Test number too big\n", stderr);
+
+    tests[test_num]();
+    
     return EXIT_SUCCESS;
 }

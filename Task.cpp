@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <sys/epoll.h>
 #include <span>
-uint64_t Task::counter = 0;
 Mutex::Mutex() : waker(std::make_unique<FifoWaker>()) {}
 ConditionVariable::ConditionVariable() : waker(std::make_unique<FifoWaker>()) {}
 StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unused]]) 

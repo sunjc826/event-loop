@@ -12,17 +12,12 @@ struct Task
 {
     friend class SingleThreadedExecutor;
 private:
-    static uint64_t counter;
-    // used by composite tasks
-    uint64_t const task_id;
-    std::optional<uint64_t> woken_task_id;
-
     std::string name;
     std::vector<std::function<void()>> on_done_callbacks;
     std::optional<std::unique_ptr<void, TypeErasedDeleter>> *parent_return_value_location = nullptr;
     std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> last_child_return_values;
 public:
-    Task(std::string name) : task_id(++counter), name(std::move(name)) {}
+    Task(std::string name) : name(std::move(name)) {}
     Task(Task const &) = delete;
     Task(Task &&) = default;
     virtual StepResult step(SingleThreadedExecutor &executor) { return step_result::Done(); }

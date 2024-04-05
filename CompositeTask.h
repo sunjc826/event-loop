@@ -1,5 +1,6 @@
 #include "StepResult.h"
 #include "Task.h"
+#include "declarations.h"
 
 template <typename TaskT, typename... OtherTaskT>
 struct ConcatTask final : public Task
@@ -13,7 +14,7 @@ struct ConcatTask final : public Task
     {
         if (task)
         {
-            auto result = task->step(executor, std::move(child_return_values));
+            StepResult result = task->step(executor, std::move(child_return_values));
             if (step_result::Done *done = std::get_if<step_result::Done>(&result))
             {
                 task = std::nullopt;
@@ -22,7 +23,8 @@ struct ConcatTask final : public Task
             else
             if (step_result::Ready *ready = std::get_if<step_result::Ready>(&result))
             {
-                return std::move(result);
+                // implicitly movable entity
+                return result;
             }
             else
             if (step_result::Wait *wait = std::get_if<step_result::Wait>(&result))
@@ -36,7 +38,7 @@ struct ConcatTask final : public Task
                     break;
                 }
                 wait->on_wait_finish = step_result::Wait::task_not_done;
-                return std::move(result);
+                return result;
             }
         }
         else
@@ -59,48 +61,109 @@ struct ConcatTask<TaskT> final : public Task
     }
 };
 
+enum class SubtaskStatus
+{
+    ready,
+    waiting,
+    done,
+};
+template <typename TaskT>
+struct TaskWithStatus
+{
+    TaskT task;
+    SubtaskStatus status = SubtaskStatus::ready; 
+    TaskWithStatus(TaskT task)
+        : task(std::move(task))
+    {}
+};
+
 template <typename TaskT, typename... OtherTasks>
 struct IndependentTasks final : public Task
 {
-    std::optional<TaskT> task;
+    std::optional<TaskWithStatus<TaskT>> task_with_status;
     IndependentTasks<OtherTasks...> other_tasks;
-    IndependentTasks(TaskT &&task, OtherTasks &&...other_tasks)
-        : task(std::move(task)), other_tasks(IndependentTasks<OtherTasks...>(std::move(other_tasks)...))
+    IndependentTasks(TaskT task, OtherTasks ...other_tasks)
+        : task_with_status(std::move(task)), other_tasks(IndependentTasks<OtherTasks...>(std::move(other_tasks)...))
     {}
 
     StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
     {
-        if (task)
+        
+        if (task_with_status)
         {
-            auto result = task->step(executor, std::move(child_return_values));
-            if (step_result::Done *done = std::get_if<step_result::Done>(&result))
+            switch (task_with_status->status)
             {
-                task = std::nullopt;
-                return step_result::Ready(done->child_tasks);
-            }
-            else
-            if (step_result::Ready *ready = std::get_if<step_result::Ready>(&result))
+            case SubtaskStatus::ready:
             {
-                return std::move(result);
-            }
-            else
-            if (step_result::Wait *wait = std::get_if<step_result::Wait>(&result))
-            {
-                // TODO: Use Task::woken_task_id
-                switch (wait->on_wait_finish)
+                TaskT &task = task_with_status->task;
+                StepResult result = task->step(executor, std::move(child_return_values));
+                if (step_result::Done *done = std::get_if<step_result::Done>(&result))
                 {
-                case step_result::Wait::task_automatically_done:
-                    task = std::nullopt;
-                    break;
-                case step_result::Wait::task_not_done:
-                    break;
+                    task_with_status = std::nullopt;
+                    return step_result::Ready(std::move(done->child_tasks));
                 }
-                return step_result::Wait(step_result::Wait::task_not_done, std::move(wait->wait_for));
+                else
+                if (step_result::Ready *ready = std::get_if<step_result::Ready>(&result))
+                {
+                    // implicitly movable entity
+                    return result;
+                }
+                else
+                if (step_result::Wait *wait = std::get_if<step_result::Wait>(&result))
+                {
+                    task_with_status->status = SubtaskStatus::waiting;
+                    return step_result::PartialWait(
+                        task_with_status->status,
+                        std::move(*wait)
+                    );
+                }
+                else
+                if (step_result::PartialWait *partial_wait = std::get_if<step_result::PartialWait>(&result))
+                {
+                    return result;
+                }
+
+                break;
+            }
+            case SubtaskStatus::waiting:
+            {
+                break;   
+            }
+            case SubtaskStatus::done:
+            {
+                task_with_status = std::nullopt;
+                break;
+            } 
+            }
+        }
+        bool is_task_waiting = task_with_status.has_value();
+        StepResult result = other_tasks.step(executor, std::move(child_return_values));
+        if (step_result::Done *done = std::get_if<step_result::Done>(&result))
+        {
+            if (is_task_waiting)
+            {
+                // TODO
+                return step_result::Ready(std::move(done->child_tasks));
+            }
+            else
+            {
+                return result;
             }
         }
         else
+        if (step_result::Ready *ready = std::get_if<step_result::Ready>(&result))
         {
-            return other_tasks.step(executor, std::move(child_return_values));
+            return result;
+        }
+        else
+        if (step_result::Wait *wait = std::get_if<step_result::Wait>(&result))
+        {
+            return result;
+        }
+        else
+        if (step_result::PartialWait *partial_wait = std::get_if<step_result::PartialWait>(&result))
+        {
+            return result;
         }
     }
 };
@@ -108,13 +171,32 @@ struct IndependentTasks final : public Task
 template <typename TaskT>
 struct IndependentTasks<TaskT> final : public Task
 {
-    TaskT task;
-    IndependentTasks(Task &&task)
-        : task(std::move(task))
+    std::optional<TaskWithStatus<TaskT>> task_with_status;
+    IndependentTasks(Task task)
+        : task_with_status(std::move(task))
     {}
 
     StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
     {
-        return task.step(executor, std::move(child_return_values));
+        if (task_with_status)
+        {
+            TaskT &task = task_with_status->task;
+            switch (task_with_status->status)
+            {
+            case SubtaskStatus::ready:
+            {
+                break;
+            }
+            case SubtaskStatus::waiting:
+            {
+                break;
+            }
+            case SubtaskStatus::done:
+            {
+                break;
+            }
+            }
+            return task.step(executor, std::move(child_return_values));
+        }
     }
 };
