@@ -38,7 +38,7 @@ Wait::Wait(OnWaitFinish on_wait_finish,
 {
 }
 
-Wait::Wait(OnWaitFinish on_wait_finish, std::reference_wrapper<Waker> waker)
+Wait::Wait(OnWaitFinish on_wait_finish, Waker &waker)
     : on_wait_finish(on_wait_finish), wait_for(WaitForWaker(waker))
 {
 }

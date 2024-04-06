@@ -57,7 +57,7 @@ struct Wait
     Wait(OnWaitFinish on_wait_finish, WaitFor wait_for);
     Wait(OnWaitFinish on_wait_finish,
          std::vector<std::unique_ptr<Task>> child_tasks);
-    Wait(OnWaitFinish on_wait_finish, std::reference_wrapper<Waker> waker);
+    Wait(OnWaitFinish on_wait_finish, Waker &waker);
 };
 
 // Used by composite tasks
@@ -88,6 +88,14 @@ struct CompositeWait
           wait(std::move(composite_wait.wait))
     {
     }
+
+    CompositeWait(Waker &root_waker, CompositeWait composite_wait)
+        : all_subtasks_sleeping(composite_wait.all_subtasks_sleeping),
+        root_waker(root_waker),
+        leaf_status(composite_wait.leaf_status),
+        statuses(std::move(composite_wait.statuses)),
+        wait(std::move(composite_wait.wait))
+    {}
 };
 } // namespace step_result
 

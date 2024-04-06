@@ -14,6 +14,20 @@ public:
     virtual void wake_all(SingleThreadedExecutor &executor) = 0;
     virtual ~Waker(){};
 };
+
+class NullWaker final : public Waker
+{
+public:
+    static NullWaker &create()
+    {
+        static NullWaker null_waker{};
+        return null_waker;
+    }
+    bool has_waiters() override { return false; }
+    void add_waiter(SleepingTask &sleeping_task) override {}
+    void wake_one(SingleThreadedExecutor &executor) override {}
+    void wake_all(SingleThreadedExecutor &executor) override {}
+};
 class FifoWaker final : public Waker
 {
     std::queue<std::reference_wrapper<SleepingTask>> wait_queue; // no nullptrs
@@ -28,7 +42,7 @@ public:
 class SingleTaskWaker : public Waker
 {
 protected:
-    SleepingTask *sleeping_task;
+    SleepingTask *sleeping_task = nullptr;
 
 public:
     SingleTaskWaker() = default;

@@ -90,7 +90,7 @@ struct TaskWithStatus
 template <typename TaskT, typename... OtherTasks>
 struct IndependentTasks final : public Task
 {
-    SingleTaskWaker self_waker;
+    ReusableSingleTaskWaker self_waker;
     std::optional<TaskWithStatus<TaskT>> task_with_status;
     IndependentTasks<OtherTasks...> other_tasks;
     IndependentTasks(TaskT task, OtherTasks... other_tasks)
@@ -139,7 +139,8 @@ struct IndependentTasks final : public Task
                 else if (step_result::CompositeWait *composite_wait =
                              std::get_if<step_result::CompositeWait>(&result))
                 {
-                    status = SubtaskStatus::waiting;
+                    if (composite_wait->all_subtasks_sleeping)
+                        status = SubtaskStatus::waiting;
                     return step_result::CompositeWait(
                         false, self_waker, status, std::move(*composite_wait));
                 }
@@ -168,38 +169,23 @@ struct IndependentTasks final : public Task
         if (step_result::Done *done = std::get_if<step_result::Done>(&result))
         {
             if (is_first_task_waiting)
-            {
-                TaskT &task = task_with_status->task;
-                SubtaskStatus &status = task_with_status->status;
-                StepResult result = task.step_with_result(
-                    executor, std::move(child_return_values));
-                if (auto *wait = std::get_if<step_result::Wait>(&result))
-                    return step_result::CompositeWait(true, self_waker, status, std::move(*wait));
-                else if (auto *composite_wait = std::get_if<step_result::CompositeWait>(&result))
-                    return step_result::CompositeWait(true, self_waker, status, std::move(*composite_wait));
-                else
-                    throw std::runtime_error("Unexpected");
-                
-            }
+                return step_result::Wait(step_result::Wait::task_not_done, self_waker);
             else
-            {
                 return result;
-            }
         }
         else if (step_result::Ready *ready =
                      std::get_if<step_result::Ready>(&result))
         {
             return result;
         }
-        else if (step_result::Wait *wait =
-                     std::get_if<step_result::Wait>(&result))
-        {
-            return result;
-        }
         else if (step_result::CompositeWait *composite_wait =
                      std::get_if<step_result::CompositeWait>(&result))
         {
-            return result;
+            return step_result::CompositeWait(self_waker, std::move(*composite_wait));
+        }
+        else if (step_result::Wait *null_wait = std::get_if<step_result::Wait>(&result))
+        {
+            return step_result::Wait(step_result::Wait::task_not_done, self_waker);
         }
         else
         {
@@ -231,7 +217,7 @@ struct IndependentTasks<TaskT> final : public Task
             switch (status)
             {
             case SubtaskStatus::ready:
-            case SubtaskStatus::waiting:
+            // case SubtaskStatus::waiting:
             {
                 StepResult result = task.step_with_result(
                     executor, std::move(child_return_values));
@@ -267,6 +253,8 @@ struct IndependentTasks<TaskT> final : public Task
                 else if (step_result::CompositeWait *composite_wait =
                              std::get_if<step_result::CompositeWait>(&result))
                 {
+                    if (composite_wait->all_subtasks_sleeping)
+                        status = SubtaskStatus::waiting;
                     return step_result::CompositeWait(
                         composite_wait->all_subtasks_sleeping, self_waker, status,
                         std::move(*composite_wait));
@@ -283,6 +271,10 @@ struct IndependentTasks<TaskT> final : public Task
                     std::nullopt; // TODO: Would this lead to lifetime issues
                                   // w.r.t references to status?
                 return step_result::Done();
+            }
+            case SubtaskStatus::waiting:
+            {
+                return step_result::Wait(step_result::Wait::task_not_done, self_waker);
             }
             }
         }

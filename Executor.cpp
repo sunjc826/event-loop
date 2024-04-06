@@ -223,7 +223,7 @@ ExecutorStepResult SingleThreadedExecutor::step()
     {
         bool const destroy_on_wake = composite_wait->wait.on_wait_finish ==
                                      step_result::Wait::task_automatically_done;
-        step_result::Wait wait(step_result::Wait::task_automatically_done,
+        step_result::Wait wait(step_result::Wait::task_not_done,
                                std::move(composite_wait->wait.wait_for));
         handle_wait(std::make_unique<CompositeWakeTask>(
                         composite_wait->root_waker, composite_wait->leaf_status,

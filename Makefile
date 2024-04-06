@@ -7,7 +7,8 @@ OBJECTS=$(patsubst %.cpp,$(BUILD_DIR)/%.o,$(C_FILES))
 DEP_FILES=$(patsubst %.cpp,$(BUILD_DIR)/%.d,$(C_FILES))
 CXX=$(shell which clang++)
 SANITIZER_FLAGS=-fsanitize=address
-CXX_FLAGS=-std=c++20 -g -DNDEBUG $(SANITIZER_FLAGS) $(foreach D,$(INCLUDE_DIRS),-I$(D)) -MP -MD
+DEFINES=-DNDEBUG
+CXX_FLAGS=-std=c++20 -g $(DEFINES) $(SANITIZER_FLAGS) $(foreach D,$(INCLUDE_DIRS),-I$(D)) -MP -MD
 
 .PHONY: all
 all: $(BINARY)
