@@ -43,3 +43,9 @@ void SingleTaskWaker::wake_all(SingleThreadedExecutor &executor)
 {
     wake_one(executor);
 }
+
+void ReusableSingleTaskWaker::wake_one(SingleThreadedExecutor &executor)
+{
+    SingleTaskWaker::wake_one(executor);
+    sleeping_task = nullptr;
+}

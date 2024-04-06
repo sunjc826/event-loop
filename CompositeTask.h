@@ -1,5 +1,9 @@
 #include "StepResult.h"
 #include "Task.h"
+#include "Waker.h"
+#include <cstddef>
+#include <stdexcept>
+#include <variant>
 
 template <typename TaskT, typename... OtherTaskT>
 struct ConcatTask final : public Task
@@ -86,6 +90,7 @@ struct TaskWithStatus
 template <typename TaskT, typename... OtherTasks>
 struct IndependentTasks final : public Task
 {
+    SingleTaskWaker self_waker;
     std::optional<TaskWithStatus<TaskT>> task_with_status;
     IndependentTasks<OtherTasks...> other_tasks;
     IndependentTasks(TaskT task, OtherTasks... other_tasks)
@@ -104,7 +109,8 @@ struct IndependentTasks final : public Task
 
         if (task_with_status)
         {
-            switch (task_with_status->status)
+            SubtaskStatus &status = task_with_status->status;
+            switch (status)
             {
             case SubtaskStatus::ready:
             {
@@ -126,16 +132,21 @@ struct IndependentTasks final : public Task
                 else if (step_result::Wait *wait =
                              std::get_if<step_result::Wait>(&result))
                 {
-                    task_with_status->status = SubtaskStatus::waiting;
-                    return step_result::PartialWait(task_with_status->status,
-                                                    std::move(*wait));
+                    status = SubtaskStatus::waiting;
+                    return step_result::CompositeWait(false, self_waker, status,
+                                                      std::move(*wait));
                 }
-                else if (step_result::PartialWait *partial_wait =
-                             std::get_if<step_result::PartialWait>(&result))
+                else if (step_result::CompositeWait *composite_wait =
+                             std::get_if<step_result::CompositeWait>(&result))
                 {
-                    return result;
+                    status = SubtaskStatus::waiting;
+                    return step_result::CompositeWait(
+                        false, self_waker, status, std::move(*composite_wait));
                 }
-
+                else
+                {
+                    throw std::runtime_error("Unhandled");
+                }
                 break;
             }
             case SubtaskStatus::waiting:
@@ -149,15 +160,26 @@ struct IndependentTasks final : public Task
             }
             }
         }
-        bool is_task_waiting = task_with_status.has_value();
+
+        bool const is_first_task_waiting = task_with_status.has_value();
+        bool const is_first_task_done = !is_first_task_waiting;
         StepResult result = other_tasks.step_with_result(
             executor, std::move(child_return_values));
         if (step_result::Done *done = std::get_if<step_result::Done>(&result))
         {
-            if (is_task_waiting)
+            if (is_first_task_waiting)
             {
-                // TODO
-                return step_result::Ready(std::move(done->child_tasks));
+                TaskT &task = task_with_status->task;
+                SubtaskStatus &status = task_with_status->status;
+                StepResult result = task.step_with_result(
+                    executor, std::move(child_return_values));
+                if (auto *wait = std::get_if<step_result::Wait>(&result))
+                    return step_result::CompositeWait(true, self_waker, status, std::move(*wait));
+                else if (auto *composite_wait = std::get_if<step_result::CompositeWait>(&result))
+                    return step_result::CompositeWait(true, self_waker, status, std::move(*composite_wait));
+                else
+                    throw std::runtime_error("Unexpected");
+                
             }
             else
             {
@@ -174,10 +196,14 @@ struct IndependentTasks final : public Task
         {
             return result;
         }
-        else if (step_result::PartialWait *partial_wait =
-                     std::get_if<step_result::PartialWait>(&result))
+        else if (step_result::CompositeWait *composite_wait =
+                     std::get_if<step_result::CompositeWait>(&result))
         {
             return result;
+        }
+        else
+        {
+            throw std::runtime_error("Unhandled");
         }
     }
 };
@@ -185,6 +211,7 @@ struct IndependentTasks final : public Task
 template <typename TaskT>
 struct IndependentTasks<TaskT> final : public Task
 {
+    ReusableSingleTaskWaker self_waker;
     std::optional<TaskWithStatus<TaskT>> task_with_status;
     IndependentTasks(TaskT task)
         : Task("IndependentTasks"),
@@ -200,23 +227,68 @@ struct IndependentTasks<TaskT> final : public Task
         if (task_with_status)
         {
             TaskT &task = task_with_status->task;
-            switch (task_with_status->status)
+            SubtaskStatus &status = task_with_status->status;
+            switch (status)
             {
             case SubtaskStatus::ready:
-            {
-                break;
-            }
             case SubtaskStatus::waiting:
             {
+                StepResult result = task.step_with_result(
+                    executor, std::move(child_return_values));
+#ifndef NDEBUG
+                if (status == SubtaskStatus::waiting)
+                {
+                    if (std::holds_alternative<step_result::Wait>(result) or
+                        std::holds_alternative<step_result::CompositeWait>(
+                            result))
+                        ;
+                    else
+                        throw std::runtime_error("Unexpected");
+                }
+#endif
+                if (step_result::Done *done =
+                        std::get_if<step_result::Done>(&result))
+                {
+                    task_with_status = std::nullopt;
+                    return step_result::Done(std::move(done->child_tasks));
+                }
+                else if (step_result::Ready *ready =
+                             std::get_if<step_result::Ready>(&result))
+                {
+                    return result;
+                }
+                else if (step_result::Wait *wait =
+                             std::get_if<step_result::Wait>(&result))
+                {
+                    status = SubtaskStatus::waiting;
+                    return step_result::CompositeWait(true, self_waker, status,
+                                                      std::move(*wait));
+                }
+                else if (step_result::CompositeWait *composite_wait =
+                             std::get_if<step_result::CompositeWait>(&result))
+                {
+                    return step_result::CompositeWait(
+                        composite_wait->all_subtasks_sleeping, self_waker, status,
+                        std::move(*composite_wait));
+                }
+                else
+                {
+                    throw std::runtime_error("Unhandled");
+                }
                 break;
             }
             case SubtaskStatus::done:
             {
-                break;
+                task_with_status =
+                    std::nullopt; // TODO: Would this lead to lifetime issues
+                                  // w.r.t references to status?
+                return step_result::Done();
             }
             }
-            return task.step_with_result(executor,
-                                         std::move(child_return_values));
+        }
+        else
+        {
+            return step_result::Done();
         }
     }
 };

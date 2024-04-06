@@ -6,7 +6,8 @@ C_FILES=$(foreach D,$(CODE_DIRS),$(wildcard $(D)/*.cpp))
 OBJECTS=$(patsubst %.cpp,$(BUILD_DIR)/%.o,$(C_FILES))
 DEP_FILES=$(patsubst %.cpp,$(BUILD_DIR)/%.d,$(C_FILES))
 CXX=$(shell which clang++)
-CXX_FLAGS=-std=c++20 -g -DNDEBUG $(foreach D,$(INCLUDE_DIRS),-I$(D)) -MP -MD
+SANITIZER_FLAGS=-fsanitize=address
+CXX_FLAGS=-std=c++20 -g -DNDEBUG $(SANITIZER_FLAGS) $(foreach D,$(INCLUDE_DIRS),-I$(D)) -MP -MD
 
 .PHONY: all
 all: $(BINARY)
@@ -16,7 +17,7 @@ clean:
 	rm -rf $(BUILD_DIR)/*
 
 $(BINARY): $(OBJECTS)
-	$(CXX) -o $@ $^
+	$(CXX) $(SANITIZER_FLAGS) -o $@ $^
 
 $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(@D)

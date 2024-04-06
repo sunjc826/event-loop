@@ -82,46 +82,35 @@ struct RunOnceTask : public Task
     }
 };
 
-struct CompositePartialWakeTask final : public ImmediatelyDestroyedTask
+struct CompositeWakeTask final : public RunOnceTask<CompositeWakeTask>
 {
-    SubtaskStatus &status;
+    Waker &composite_task_waker;
+    SubtaskStatus &leaf_status;
+    std::vector<std::reference_wrapper<SubtaskStatus>> statuses;
     bool destroy_on_wake;
-    CompositePartialWakeTask(SubtaskStatus &status, bool destroy_on_wake)
-        : ImmediatelyDestroyedTask("CompositePartialWakeTask"), status(status),
-          destroy_on_wake(destroy_on_wake)
+    CompositeWakeTask(
+        Waker &composite_task_waker, SubtaskStatus &leaf_status,
+        std::vector<std::reference_wrapper<SubtaskStatus>> statuses,
+        bool destroy_on_wake)
+        : RunOnceTask("CompositeWakeTask"),
+          composite_task_waker(composite_task_waker), leaf_status(leaf_status),
+          statuses(std::move(statuses)), destroy_on_wake(destroy_on_wake)
     {
     }
 
-    ~CompositePartialWakeTask()
+    step_result::Done run_once(SingleThreadedExecutor &executor)
     {
         if (destroy_on_wake)
-            status = SubtaskStatus::done;
+            leaf_status = SubtaskStatus::done;
         else
+            leaf_status = SubtaskStatus::ready;
+        for (SubtaskStatus &status : statuses)
             status = SubtaskStatus::ready;
-    }
-};
+        
+        if (composite_task_waker.has_waiters())
+            composite_task_waker.wake_one(executor);
 
-struct CompositeFullWakeTask final : public RunOnceTask<CompositeFullWakeTask>
-{
-    std::unique_ptr<Task> composite_task;
-    SubtaskStatus &status;
-    bool destroy_on_wake;
-    CompositeFullWakeTask(std::unique_ptr<Task> composite_task,
-                          SubtaskStatus &status, bool destroy_on_wake)
-        : RunOnceTask("CompositeFullWakeTask"),
-          composite_task(std::move(composite_task)), status(status),
-          destroy_on_wake(destroy_on_wake)
-    {
-    }
-
-    StepResult run_once(SingleThreadedExecutor &executor)
-    {
-        if (destroy_on_wake)
-            status = SubtaskStatus::done;
-        else
-            status = SubtaskStatus::ready;
-        return step_result::Done(
-            make_vector_unique<Task>(std::move(composite_task)));
+        return {};
     }
 };
 
@@ -229,27 +218,21 @@ ExecutorStepResult SingleThreadedExecutor::step()
     {
         handle_wait(std::move(task), *wait);
     }
-    else if (auto *partial_wait =
-                 std::get_if<step_result::PartialWait>(&result))
+    else if (auto *composite_wait =
+                 std::get_if<step_result::CompositeWait>(&result))
     {
-        bool const destroy_on_wake = partial_wait->wait.on_wait_finish ==
+        bool const destroy_on_wake = composite_wait->wait.on_wait_finish ==
                                      step_result::Wait::task_automatically_done;
         step_result::Wait wait(step_result::Wait::task_automatically_done,
-                               std::move(partial_wait->wait.wait_for));
-        handle_wait(std::make_unique<CompositePartialWakeTask>(
-                        partial_wait->status, destroy_on_wake),
+                               std::move(composite_wait->wait.wait_for));
+        handle_wait(std::make_unique<CompositeWakeTask>(
+                        composite_wait->root_waker, composite_wait->leaf_status,
+                        std::move(composite_wait->statuses), destroy_on_wake),
                     wait);
-        tasks.push_front(std::move(task));
-    }
-    else if (auto *full_wait = std::get_if<step_result::FullWait>(&result))
-    {
-        bool const destroy_on_wake = partial_wait->wait.on_wait_finish ==
-                                     step_result::Wait::task_automatically_done;
-        step_result::Wait wait(step_result::Wait::task_automatically_done,
-                               std::move(partial_wait->wait.wait_for));
-        handle_wait(std::make_unique<CompositeFullWakeTask>(
-                        std::move(task), partial_wait->status, destroy_on_wake),
-                    wait);
+        if (composite_wait->all_subtasks_sleeping)
+            add_sleeping_task(std::move(task), composite_wait->root_waker, false);    
+        else
+            tasks.push_front(std::move(task));
     }
     else
     {

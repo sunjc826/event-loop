@@ -27,7 +27,7 @@ WaitForChildTasks::WaitForChildTasks(std::vector<std::unique_ptr<Task>> tasks)
 }
 
 Wait::Wait(OnWaitFinish on_wait_finish,
-           std::variant<WaitForWaker, WaitForChildTasks> wait_for)
+           WaitFor wait_for)
     : on_wait_finish(on_wait_finish), wait_for(std::move(wait_for))
 {
 }

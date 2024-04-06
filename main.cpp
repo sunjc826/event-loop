@@ -850,7 +850,10 @@ int main(int argc, char const **argv)
 
     size_t test_num = std::strtoul(argv[1], nullptr, 10);
     if (test_num >= tests.size())
+    {
         fputs("Test number too big\n", stderr);
+        exit(EXIT_FAILURE);
+    }
 
     tests[test_num]();
 

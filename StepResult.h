@@ -44,6 +44,7 @@ struct WaitForChildTasks
     std::vector<std::unique_ptr<Task>> tasks;
     WaitForChildTasks(std::vector<std::unique_ptr<Task>> tasks);
 };
+using WaitFor = std::variant<WaitForWaker, WaitForChildTasks>;
 struct Wait
 {
     enum OnWaitFinish : bool
@@ -52,38 +53,43 @@ struct Wait
         task_not_done,
     };
     OnWaitFinish on_wait_finish;
-    std::variant<WaitForWaker, WaitForChildTasks> wait_for;
-    Wait(OnWaitFinish on_wait_finish,
-         std::variant<WaitForWaker, WaitForChildTasks> wait_for);
+    WaitFor wait_for;
+    Wait(OnWaitFinish on_wait_finish, WaitFor wait_for);
     Wait(OnWaitFinish on_wait_finish,
          std::vector<std::unique_ptr<Task>> child_tasks);
     Wait(OnWaitFinish on_wait_finish, std::reference_wrapper<Waker> waker);
 };
 
 // Used by composite tasks
-struct PartialWait
+struct CompositeWait
 {
-    SubtaskStatus &status;
+    bool all_subtasks_sleeping;
+    Waker &root_waker;
+    SubtaskStatus &leaf_status;
+    std::vector<std::reference_wrapper<SubtaskStatus>> statuses;
     Wait wait;
-    template <typename... Args>
-    PartialWait(SubtaskStatus &status, Args &&...args)
-        : status(status), wait(std::forward<Args>(args)...)
+    CompositeWait(bool all_subtasks_sleeping, Waker &root_waker,
+                  SubtaskStatus &status, Wait wait)
+        : all_subtasks_sleeping(all_subtasks_sleeping), root_waker(root_waker),
+          leaf_status(status), wait(std::move(wait))
     {
     }
-};
-// Used by composite tasks
-struct FullWait
-{
-    SubtaskStatus &status;
-    Wait wait;
-    template <typename... Args>
-    FullWait(SubtaskStatus &status, Args &&...args)
-        : status(status), wait(std::forward<Args>(args)...)
+
+    CompositeWait(bool all_subtasks_sleeping, Waker &root_waker,
+                  SubtaskStatus &status, CompositeWait composite_wait)
+        : all_subtasks_sleeping(all_subtasks_sleeping), root_waker(root_waker),
+          leaf_status(composite_wait.leaf_status),
+          statuses(
+              [&status, &composite_wait]
+              {
+                  composite_wait.statuses.push_back(std::ref(status));
+                  return std::move(composite_wait.statuses);
+              }()),
+          wait(std::move(composite_wait.wait))
     {
     }
 };
 } // namespace step_result
 
-using StepResult =
-    std::variant<step_result::Done, step_result::Ready, step_result::Wait,
-                 step_result::PartialWait, step_result::FullWait>;
+using StepResult = std::variant<step_result::Done, step_result::Ready,
+                                step_result::Wait, step_result::CompositeWait>;

@@ -25,8 +25,9 @@ public:
     void wake_all(SingleThreadedExecutor &executor) override;
 };
 
-class SingleTaskWaker final : public Waker
+class SingleTaskWaker : public Waker
 {
+protected:
     SleepingTask *sleeping_task;
 
 public:
@@ -35,4 +36,11 @@ public:
     void add_waiter(SleepingTask &sleeping_task) override;
     void wake_one(SingleThreadedExecutor &executor) override;
     void wake_all(SingleThreadedExecutor &executor) override;
+};
+
+class ReusableSingleTaskWaker final : public SingleTaskWaker
+{
+public:
+    ReusableSingleTaskWaker() = default;
+    void wake_one(SingleThreadedExecutor &executor) override;
 };
