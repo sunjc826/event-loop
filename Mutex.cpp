@@ -2,7 +2,8 @@
 
 Mutex::Mutex() : waker(std::make_unique<FifoWaker>()) {}
 
-StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unused]]) 
+StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor
+                                  [[maybe_unused]])
 {
     if (!mutex.is_acquired)
     {
@@ -10,12 +11,12 @@ StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unuse
         return step_result::Done();
     }
     else
-        return step_result::Wait(
-            step_result::Wait::task_not_done, 
-            step_result::WaitForWaker(*mutex.waker.get()));
+        return step_result::Wait(step_result::Wait::task_not_done,
+                                 step_result::WaitForWaker(*mutex.waker.get()));
 }
 
-StepResult RcMutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unused]]) 
+StepResult RcMutexAcquireTask::step(SingleThreadedExecutor &executor
+                                    [[maybe_unused]])
 {
     if (!mutex->is_acquired)
     {

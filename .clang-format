@@ -1,0 +1,20 @@
+---
+UseTab: Never
+AccessModifierOffset: -4
+Standard: c++20
+TabWidth: 4
+BreakBeforeBraces: Allman
+NamespaceIndentation: None
+Language: Cpp
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
+SpaceAfterTemplateKeyword: true
+SpaceBeforeParens: ControlStatements
+IndentWidth: 4
+IndentPPDirectives: AfterHash
+IndentCaseBlocks: false
+IndentCaseLabels: false
+IndentAccessModifiers: false
+AlignArrayOfStructures: Left
+AlwaysBreakTemplateDeclarations: Yes
+SpaceBeforeInheritanceColon: true

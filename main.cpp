@@ -1,12 +1,13 @@
+#include "CompositeTask.h"
+#include "ConditionVariable.h"
+#include "CoroutineTask.h"
 #include "Executor.h"
+#include "Mutex.h"
+#include "Rc.h"
 #include "StepResult.h"
 #include "Task.h"
-#include "CoroutineTask.h"
-#include "CompositeTask.h"
-#include "Mutex.h"
-#include "ConditionVariable.h"
-#include "Rc.h"
 #include "utilities.h"
+
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
@@ -29,7 +30,7 @@ class DequeueTask final : public Task
     MutexCvObject<std::queue<int>> &queue;
     unsigned state = 0;
 
-  public:
+public:
     DequeueTask(MutexCvObject<std::queue<int>> &queue)
         : Task("DequeueTask"), queue(queue)
     {
@@ -71,7 +72,7 @@ class GuaranteedDequeueTask final : public Task
     };
     State state = State::acquiring;
 
-  public:
+public:
     GuaranteedDequeueTask(MutexCvObject<std::queue<int>> &queue)
         : Task("GuaranteedDequeueTask"), queue(queue)
     {
@@ -112,7 +113,7 @@ class EnqueueTask final : public Task
     int element;
     unsigned state = 0;
 
-  public:
+public:
     EnqueueTask(MutexCvObject<std::queue<int>> &queue, int element)
         : Task("EnqueueTask"), queue(queue), element(element)
     {
@@ -155,7 +156,7 @@ class EnqueueTaskChain final : public Task
     };
     Stage stage;
 
-  public:
+public:
     EnqueueTaskChain(MutexCvObject<std::queue<int>> &queue,
                      std::vector<int> stack, Stage stage)
         : Task("EnqueueTaskChain"), queue(queue), stack(std::move(stack)),
@@ -213,7 +214,7 @@ class MainTask final : public Task
     unsigned state = 0;
     MutexCvObject<std::queue<int>> queue;
 
-  public:
+public:
     MainTask() : Task("MainTask") {}
     StepResult step(SingleThreadedExecutor &executor) override
     {
@@ -259,7 +260,7 @@ class DequeueTask final : public Task
     Rc<MutexCvObject<std::queue<int>>> queue;
     unsigned state = 0;
 
-  public:
+public:
     DequeueTask(Rc<MutexCvObject<std::queue<int>>> queue)
         : Task("DequeueTask"), queue(std::move(queue))
     {
@@ -301,7 +302,7 @@ class GuaranteedDequeueTask final : public Task
     };
     State state = State::acquiring;
 
-  public:
+public:
     GuaranteedDequeueTask(Rc<MutexCvObject<std::queue<int>>> queue)
         : Task("GuaranteedDequeueTask"), queue(std::move(queue))
     {
@@ -343,7 +344,7 @@ class EnqueueTask final : public Task
     int element;
     unsigned state = 0;
 
-  public:
+public:
     EnqueueTask(Rc<MutexCvObject<std::queue<int>>> queue, int element)
         : Task("EnqueueTask"), queue(std::move(queue)), element(element)
     {
@@ -387,7 +388,7 @@ class EnqueueTaskChain final : public Task
     };
     Stage stage;
 
-  public:
+public:
     EnqueueTaskChain(Rc<MutexCvObject<std::queue<int>>> queue,
                      std::vector<int> stack, Stage stage)
         : Task("EnqueueTaskChain"), queue(std::move(queue)),
@@ -405,11 +406,12 @@ class EnqueueTaskChain final : public Task
 
     static EnqueueTaskChain<chain_mode>
     create_non_ptr(Rc<MutexCvObject<std::queue<int>>> queue,
-            std::vector<int> elements_to_enqueue)
+                   std::vector<int> elements_to_enqueue)
     {
         std::ranges::reverse(elements_to_enqueue);
-        return EnqueueTaskChain(
-            std::move(queue), std::move(elements_to_enqueue), EnqueueTaskChain<chain_mode>::Stage::acquire);
+        return EnqueueTaskChain(std::move(queue),
+                                std::move(elements_to_enqueue),
+                                EnqueueTaskChain<chain_mode>::Stage::acquire);
     }
 
     StepResult step(SingleThreadedExecutor &) override
@@ -452,7 +454,7 @@ class MainTask final : public Task
     unsigned state = 0;
     Rc<MutexCvObject<std::queue<int>>> queue;
 
-  public:
+public:
     MainTask()
         : Task("MainTask"), queue(Rc<MutexCvObject<std::queue<int>>>::create())
     {
@@ -675,7 +677,7 @@ class ReturnTask final : public Task
 {
     ReturnTypeT return_value;
 
-  public:
+public:
     using UnambiguousReturnType = ReturnTypeT;
     ReturnTask(ReturnTypeT return_value = {})
         : Task("ReturnTask"), return_value(std::move(return_value))
@@ -749,8 +751,8 @@ std::unique_ptr<MainTask> main_task()
 
 namespace composite_task_test
 {
-using rc_queue_test::EnqueueTaskChain;
 using rc_queue_test::EnqueueTask;
+using rc_queue_test::EnqueueTaskChain;
 using rc_queue_test::GuaranteedDequeueTask;
 
 struct MainTask final : public Task
@@ -770,13 +772,14 @@ struct MainTask final : public Task
             auto tasks = make_independent_tasks(
                 EnqueueTaskChain<true>::create_non_ptr(queue, {1, 2, 3, 4}),
                 EnqueueTaskChain<false>::create_non_ptr(queue, {1, 2, 3, 4, 5}),
-                EnqueueTaskChain<true>::create_non_ptr(queue, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),
-                EnqueueTask(queue, 100),
-                GuaranteedDequeueTask(queue),
-                GuaranteedDequeueTask(queue)
-            );
+                EnqueueTaskChain<true>::create_non_ptr(
+                    queue, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),
+                EnqueueTask(queue, 100), GuaranteedDequeueTask(queue),
+                GuaranteedDequeueTask(queue));
 
-            return step_result::Wait(step_result::Wait::task_not_done, make_vector_unique<Task>(std::move(tasks)));
+            return step_result::Wait(
+                step_result::Wait::task_not_done,
+                make_vector_unique<Task>(std::move(tasks)));
         }
         case 1:
         {
@@ -791,7 +794,7 @@ struct MainTask final : public Task
         }
     }
 };
-}
+} // namespace composite_task_test
 
 void test0()
 {

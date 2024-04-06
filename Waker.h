@@ -1,8 +1,8 @@
 #pragma once
 #include "Executor.decl.h"
 #include "Task.decl.h"
-#include <stdexcept>
 #include <queue>
+#include <stdexcept>
 
 class Waker
 {
@@ -12,7 +12,7 @@ public:
     virtual void add_waiter(SleepingTask &sleeping_task) = 0;
     virtual void wake_one(SingleThreadedExecutor &executor) = 0;
     virtual void wake_all(SingleThreadedExecutor &executor) = 0;
-    virtual ~Waker() {};
+    virtual ~Waker(){};
 };
 class FifoWaker final : public Waker
 {
@@ -28,6 +28,7 @@ public:
 class SingleTaskWaker final : public Waker
 {
     SleepingTask *sleeping_task;
+
 public:
     SingleTaskWaker() = default;
     bool has_waiters() override { return sleeping_task != nullptr; }

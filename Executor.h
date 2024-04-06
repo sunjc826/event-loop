@@ -1,8 +1,8 @@
 #pragma once
-#include "Waker.h"
 #include "Task.h"
-#include <memory>
+#include "Waker.h"
 #include <deque>
+#include <memory>
 
 enum class ExecutorStepResult
 {
@@ -20,8 +20,10 @@ class Counter
         size_t count;
     };
     std::shared_ptr<Owned> shared;
+
 public:
-    Counter(SingleThreadedExecutor &executor, std::unique_ptr<Waker> waker, size_t count);
+    Counter(SingleThreadedExecutor &executor, std::unique_ptr<Waker> waker,
+            size_t count);
     Waker &get_waker();
     void operator()();
 };
@@ -33,7 +35,9 @@ class SingleThreadedExecutor
     bool is_sleeping_task_list_empty();
     size_t number_of_sleeping_tasks();
     void handle_wait(std::unique_ptr<Task>, step_result::Wait &);
-    void add_sleeping_task(std::unique_ptr<Task> task, Waker &waker, bool destroy_on_wake);
+    void add_sleeping_task(std::unique_ptr<Task> task, Waker &waker,
+                           bool destroy_on_wake);
+
 public:
     SingleThreadedExecutor()
         : sleeping_task_list(std::make_unique<SleepingTask>()) // head sentinel

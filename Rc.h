@@ -3,8 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <utility>
 #include <optional>
+#include <utility>
 // reference counted non-thread-safe shared pointer
 struct Deleter
 {
@@ -12,37 +12,35 @@ struct Deleter
     void (*deleter)(void *p);
     Deleter(void *real_ptr, void (*deleter)(void *p))
         : real_ptr(real_ptr), deleter(deleter)
-    {}
-    void operator()()
     {
-        deleter(real_ptr);
     }
+    void operator()() { deleter(real_ptr); }
 };
 template <typename T>
 class Rc
 {
-    template<typename> friend class Rc;
+    template <typename>
+    friend class Rc;
     T *ptr;
     unsigned *count;
-    
+
     std::optional<Deleter> deleter;
-    Rc(T *ptr, unsigned *count)
-        : ptr(ptr), count(count)
+    Rc(T *ptr, unsigned *count) : ptr(ptr), count(count)
     {
 #ifndef NDEBUG
         std::cerr << "Rc(T *ptr, unsigned *count)\n";
 #endif
     }
+
 public:
-    explicit Rc(T *ptr)
-        : ptr(ptr), count{new unsigned(1)}
+    explicit Rc(T *ptr) : ptr(ptr), count{new unsigned(1)}
     {
 #ifndef NDEBUG
         std::cerr << "Rc(T *ptr)\n";
 #endif
     }
 
-    template <typename ...Args>
+    template <typename... Args>
     static Rc<T> create(Args &&...args)
     {
 #ifndef NDEBUG
@@ -59,11 +57,10 @@ public:
 
         return Rc(new T(std::forward<Args>(args)...));
     }
-    
+
     Rc() = default;
 
-    Rc(std::nullptr_t)
-        : ptr(), count()
+    Rc(std::nullptr_t) : ptr(), count()
     {
 #ifndef NDEBUG
         std::cerr << "Rc(std::nullptr_t = nullptr)\n";
@@ -91,11 +88,10 @@ public:
             ++*count;
     }
 
-    Rc(Rc &&other)
-        : ptr(other.ptr), count{other.count}, deleter(other.deleter)
+    Rc(Rc &&other) : ptr(other.ptr), count{other.count}, deleter(other.deleter)
     {
 #ifndef NDEBUG
-        std::cerr <<  "Rc(Rc<U> &&other)\n";
+        std::cerr << "Rc(Rc<U> &&other)\n";
 #endif
         other.ptr = nullptr;
         other.count = nullptr;
@@ -107,7 +103,7 @@ public:
         : ptr(other.ptr), count{other.count}, deleter(other.deleter)
     {
 #ifndef NDEBUG
-        std::cerr <<  "Rc(Rc<U> &&other)\n";
+        std::cerr << "Rc(Rc<U> &&other)\n";
 #endif
         other.ptr = nullptr;
         other.count = nullptr;
@@ -117,7 +113,9 @@ public:
     // aliasing constructor
     template <typename U>
     Rc(Rc<U> const &other, T *alias)
-        : ptr(alias), count(other.count), deleter(Deleter(other.ptr, [](void *p){ delete reinterpret_cast<U *>(p); }))
+        : ptr(alias), count(other.count),
+          deleter(Deleter(other.ptr,
+                          [](void *p) { delete reinterpret_cast<U *>(p); }))
     {
 #ifndef NDEBUG
         std::cerr << "Rc(Rc<U> const &other, T *alias)\n";
@@ -125,7 +123,7 @@ public:
         // assume non null
         ++*count;
     }
-    
+
     Rc<T> &operator=(Rc<T> const &other)
     {
 #ifndef NDEBUG
@@ -190,20 +188,11 @@ public:
         return *this;
     }
 
-    T &operator*()
-    {
-        return *ptr;
-    }
+    T &operator*() { return *ptr; }
 
-    T *operator->()
-    {
-        return ptr;
-    }
+    T *operator->() { return ptr; }
 
-    T *get()
-    {
-        return ptr;
-    }
+    T *get() { return ptr; }
 
     ~Rc()
     {
