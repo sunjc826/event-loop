@@ -1,8 +1,9 @@
 #pragma once
-#include "declarations.h"
-#include "Task.h"
-#include <cassert>
+#include "Executor.decl.h"
+#include "Task.decl.h"
 #include <stdexcept>
+#include <queue>
+
 class Waker
 {
 protected:
@@ -18,14 +19,8 @@ class FifoWaker final : public Waker
     std::queue<std::reference_wrapper<SleepingTask>> wait_queue; // no nullptrs
 public:
     FifoWaker() = default;
-    bool has_waiters() override
-    {
-        return not wait_queue.empty();
-    }
-    void add_waiter(SleepingTask &sleeping_task) override
-    {
-        wait_queue.push(sleeping_task);
-    }
+    bool has_waiters() override;
+    void add_waiter(SleepingTask &sleeping_task) override;
     void wake_one(SingleThreadedExecutor &executor) override;
     void wake_all(SingleThreadedExecutor &executor) override;
 };
@@ -36,15 +31,7 @@ class SingleTaskWaker final : public Waker
 public:
     SingleTaskWaker() = default;
     bool has_waiters() override { return sleeping_task != nullptr; }
-    void add_waiter(SleepingTask &sleeping_task) override 
-    { 
-        if (this->sleeping_task != nullptr)
-            throw std::runtime_error("SingleTaskWaker should only have 1 waiter");
-        this->sleeping_task = &sleeping_task; 
-    };
+    void add_waiter(SleepingTask &sleeping_task) override;
     void wake_one(SingleThreadedExecutor &executor) override;
-    void wake_all(SingleThreadedExecutor &executor) override
-    {
-        wake_one(executor);
-    }
+    void wake_all(SingleThreadedExecutor &executor) override;
 };

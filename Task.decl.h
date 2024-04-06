@@ -1,0 +1,2 @@
+struct SleepingTask;
+struct Task;

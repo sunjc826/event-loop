@@ -1,8 +1,8 @@
 #pragma once
-#include "declarations.h"
+#include "Waker.h"
 #include "Task.h"
-#include "StepResult.h"
 #include <memory>
+#include <deque>
 
 enum class ExecutorStepResult
 {
@@ -21,20 +21,9 @@ class Counter
     };
     std::shared_ptr<Owned> shared;
 public:
-    Counter(SingleThreadedExecutor &executor, std::unique_ptr<Waker> waker, size_t count)
-        : executor(executor), shared(std::make_shared<Owned>(std::move(waker), count))
-    {
-    }
-    Waker &get_waker()
-    {
-        return *shared->waker;
-    }
-    void
-    operator()()
-    {
-        if (--shared->count == 0)
-            shared->waker->wake_one(executor);
-    }
+    Counter(SingleThreadedExecutor &executor, std::unique_ptr<Waker> waker, size_t count);
+    Waker &get_waker();
+    void operator()();
 };
 
 class SingleThreadedExecutor

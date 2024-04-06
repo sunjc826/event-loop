@@ -1,13 +1,12 @@
 #pragma once
-#include "Executor.h"
 #include "StepResult.h"
 #include "Task.h"
-#include "declarations.h"
 #include "utilities.h"
 #include <coroutine>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 struct Void{};
 struct ExecutorAwaiter{};
@@ -15,7 +14,7 @@ static constexpr ExecutorAwaiter executor_awaiter;
 template <typename PromiseType, typename ChildT, typename CoroutineTaskT>
 struct AbstractPromiseType
 {
-    Executor *most_recent_executor = nullptr;
+    SingleThreadedExecutor *most_recent_executor = nullptr;
     std::optional<StepResult> step_result;
     std::optional<std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>>> last_child_return_values;
 
@@ -46,7 +45,7 @@ struct AbstractPromiseType
             awaitable(PromiseType &promise)
                 : promise(promise)
             {}
-            Executor &await_resume()
+            SingleThreadedExecutor &await_resume()
             {
                 return *promise.most_recent_executor;
             }
@@ -93,7 +92,7 @@ struct AbstractPromiseType
 };
 
 template <typename ChildT, typename CoroutineTaskT>
-struct PromiseTypeWithReturnValue : public AbstractPromiseType<PromiseType<ChildT, CoroutineTaskT>, ChildT, CoroutineTaskT>
+struct PromiseTypeWithReturnValue : public AbstractPromiseType<PromiseTypeWithReturnValue<ChildT, CoroutineTaskT>, ChildT, CoroutineTaskT>
 {
     void return_value(Void) {}
 
@@ -132,7 +131,8 @@ struct CoroutineTask : public Task
     {}
 
     std::coroutine_handle<promise_type> handle;
-    StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override final
+
+    StepResult step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override final
     {   
         handle.promise().most_recent_executor = &executor;
         handle.promise().last_child_return_values = std::move(child_return_values);
@@ -140,7 +140,8 @@ struct CoroutineTask : public Task
             handle.resume();
         if (not handle.promise().step_result)
             throw std::runtime_error("Should be present");
-        return std::move(*handle.promise().step_result);
+        std::optional<StepResult> &opt_step_result = handle.promise().step_result;
+        return std::move(*opt_step_result);
     }
 
     ~CoroutineTask()
@@ -155,67 +156,3 @@ struct std::coroutine_traits<std::unique_ptr<T>, Args...>
     using promise_type = typename T::promise_type;
 };
 
-struct CoroMutexAcquireTask;
-struct CoroMutexAcquireTaskPromise : PromiseType<CoroMutexAcquireTaskPromise, CoroMutexAcquireTask>
-{
-    static std::string get_name()
-    {
-        return "CoroMutexAcquireTaskPromise";
-    }
-};
-struct CoroMutexAcquireTask final : CoroutineTask<CoroMutexAcquireTaskPromise>
-{
-    CoroMutexAcquireTask(std::string name, promise_type &promise) 
-        : CoroutineTask(std::move(name), promise)
-    {}
-};
-
-std::unique_ptr<CoroMutexAcquireTask> mutex_acquire_task(Rc<Mutex> mutex);
-
-struct CoroMutexReleaseTask;
-struct CoroMutexReleaseTaskPromise final : PromiseType<CoroMutexReleaseTaskPromise, CoroMutexReleaseTask>
-{
-    static std::string get_name()
-    {
-        return "CoroMutexReleaseTaskPromise"; 
-    }
-};
-struct CoroMutexReleaseTask : public CoroutineTask<CoroMutexReleaseTaskPromise>
-{
-    CoroMutexReleaseTask(std::string name, promise_type &promise) 
-        : CoroutineTask(std::move(name), promise)
-    {}
-};
-std::unique_ptr<CoroMutexReleaseTask> mutex_release_task(Rc<Mutex> mutex);
-
-struct CoroConditionVariableWaitTask;
-struct CoroConditionVariableWaitTaskPromise final : PromiseType<CoroConditionVariableWaitTaskPromise, CoroConditionVariableWaitTask>
-{
-    static std::string get_name()
-    {
-        return "CoroConditionVariableWaitTaskPromise";
-    }
-};
-struct CoroConditionVariableWaitTask : public CoroutineTask<CoroConditionVariableWaitTaskPromise>
-{
-    CoroConditionVariableWaitTask(std::string name, promise_type &promise)
-        : CoroutineTask(std::move(name), promise)
-    {}
-};
-std::unique_ptr<CoroConditionVariableWaitTask> condition_variable_wait_task(Rc<Mutex> mutex, Rc<ConditionVariable> cv);
-
-struct CoroConditionVariableNotifyTask;
-struct CoroConditionVariableNotifyTaskPromise final : PromiseType<CoroConditionVariableNotifyTaskPromise, CoroConditionVariableNotifyTask>
-{
-    static std::string get_name()
-    {
-        return "CoroConditionVariableNotifyTaskPromise";
-    }
-};
-struct CoroConditionVariableNotifyTask : public CoroutineTask<CoroConditionVariableNotifyTaskPromise>
-{
-    CoroConditionVariableNotifyTask(std::string name, promise_type &promise)
-        : CoroutineTask(std::move(name), promise)
-    {}
-};
-std::unique_ptr<CoroConditionVariableNotifyTask> condition_variable_notify_task(bool notify_all, Rc<ConditionVariable> cv);

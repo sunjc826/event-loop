@@ -3,12 +3,11 @@
 #include "Task.h"
 #include "CompositeTask.h"
 #include "Waker.h"
-#include "declarations.h"
 #include "utilities.h"
-#include <concepts>
 #include <memory>
 #include <stdexcept>
 #include <variant>
+#include <iostream>
 
 bool SingleThreadedExecutor::is_sleeping_task_list_empty()
 {
@@ -40,6 +39,22 @@ void SingleThreadedExecutor::print_tasks()
 void SingleThreadedExecutor::add_task(std::unique_ptr<Task> task)
 {
     tasks.emplace_back(std::move(task));
+}
+
+
+Counter::Counter(SingleThreadedExecutor &executor, std::unique_ptr<Waker> waker, size_t count)
+    : executor(executor), shared(std::make_shared<Owned>(std::move(waker), count))
+{
+}
+Waker &Counter::get_waker()
+{
+    return *shared->waker;
+}
+void
+Counter::operator()()
+{
+    if (--shared->count == 0)
+        shared->waker->wake_one(executor);
 }
 
 // An ImmediatelyDestroyedTask does nothing, but can potentially do useful things upon destruction
@@ -177,7 +192,7 @@ ExecutorStepResult SingleThreadedExecutor::step()
     }
     std::unique_ptr<Task> task = std::move(tasks.front());
     tasks.pop_front();
-    StepResult result = task->step(*this, std::move(task->last_child_return_values));
+    StepResult result = task->step_with_result(*this, std::move(task->last_child_return_values));
     std::optional<std::unique_ptr<void, TypeErasedDeleter>> return_value;
     if (auto *done = std::get_if<step_result::Done>(&result))
     {

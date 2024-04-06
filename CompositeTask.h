@@ -1,6 +1,5 @@
 #include "StepResult.h"
 #include "Task.h"
-#include "declarations.h"
 
 template <typename TaskT, typename... OtherTaskT>
 struct ConcatTask final : public Task
@@ -10,11 +9,11 @@ struct ConcatTask final : public Task
     ConcatTask(TaskT &&task, OtherTaskT &&...other_tasks)
         : task(std::move(task)), other_tasks(ConcatTask<OtherTaskT...>(std::move(other_tasks)...))
     {}
-    StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
+    StepResult step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
     {
         if (task)
         {
-            StepResult result = task->step(executor, std::move(child_return_values));
+            StepResult result = task->step_with_result(executor, std::move(child_return_values));
             if (step_result::Done *done = std::get_if<step_result::Done>(&result))
             {
                 task = std::nullopt;
@@ -43,7 +42,7 @@ struct ConcatTask final : public Task
         }
         else
         {
-            return other_tasks.step(executor, std::move(child_return_values));
+            return other_tasks.step_with_result(executor, std::move(child_return_values));
         }
     }
 };
@@ -55,9 +54,9 @@ struct ConcatTask<TaskT> final : public Task
     ConcatTask(TaskT &&task)
         : task(std::move(task))
     {}
-    StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
+    StepResult step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
     {
-        return task.step(executor, std::move(child_return_values));
+        return task.step_with_result(executor, std::move(child_return_values));
     }
 };
 
@@ -83,10 +82,10 @@ struct IndependentTasks final : public Task
     std::optional<TaskWithStatus<TaskT>> task_with_status;
     IndependentTasks<OtherTasks...> other_tasks;
     IndependentTasks(TaskT task, OtherTasks ...other_tasks)
-        : task_with_status(std::move(task)), other_tasks(IndependentTasks<OtherTasks...>(std::move(other_tasks)...))
+        : Task("IndependentTasks"), task_with_status(TaskWithStatus<TaskT>(std::move(task))), other_tasks(IndependentTasks<OtherTasks...>(std::move(other_tasks)...))
     {}
 
-    StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
+    StepResult step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
     {
         
         if (task_with_status)
@@ -96,7 +95,7 @@ struct IndependentTasks final : public Task
             case SubtaskStatus::ready:
             {
                 TaskT &task = task_with_status->task;
-                StepResult result = task->step(executor, std::move(child_return_values));
+                StepResult result = task.step_with_result(executor, std::move(child_return_values));
                 if (step_result::Done *done = std::get_if<step_result::Done>(&result))
                 {
                     task_with_status = std::nullopt;
@@ -137,7 +136,7 @@ struct IndependentTasks final : public Task
             }
         }
         bool is_task_waiting = task_with_status.has_value();
-        StepResult result = other_tasks.step(executor, std::move(child_return_values));
+        StepResult result = other_tasks.step_with_result(executor, std::move(child_return_values));
         if (step_result::Done *done = std::get_if<step_result::Done>(&result))
         {
             if (is_task_waiting)
@@ -172,11 +171,11 @@ template <typename TaskT>
 struct IndependentTasks<TaskT> final : public Task
 {
     std::optional<TaskWithStatus<TaskT>> task_with_status;
-    IndependentTasks(Task task)
-        : task_with_status(std::move(task))
+    IndependentTasks(TaskT task)
+        : Task("IndependentTasks"), task_with_status(TaskWithStatus<TaskT>(std::move(task)))
     {}
 
-    StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
+    StepResult step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values) override
     {
         if (task_with_status)
         {
@@ -196,7 +195,13 @@ struct IndependentTasks<TaskT> final : public Task
                 break;
             }
             }
-            return task.step(executor, std::move(child_return_values));
+            return task.step_with_result(executor, std::move(child_return_values));
         }
     }
 };
+
+template <typename TaskT, typename... OtherTasks>
+std::unique_ptr<IndependentTasks<TaskT, OtherTasks...>> make_independent_tasks(TaskT &&task, OtherTasks &&...other_tasks)
+{
+    return std::make_unique<IndependentTasks<TaskT, OtherTasks...>>(std::forward<TaskT>(task), std::forward<OtherTasks>(other_tasks)...);
+}

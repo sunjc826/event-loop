@@ -1,11 +1,13 @@
-#include "CoroutineTask.h"
 #include "Executor.h"
 #include "StepResult.h"
 #include "Task.h"
-#include "declarations.h"
+#include "CoroutineTask.h"
+#include "CompositeTask.h"
+#include "Mutex.h"
+#include "ConditionVariable.h"
+#include "Rc.h"
+#include "utilities.h"
 #include <algorithm>
-#include <cerrno>
-#include <coroutine>
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
@@ -401,6 +403,15 @@ class EnqueueTaskChain final : public Task
             std::move(queue), std::move(elements_to_enqueue), Stage::acquire);
     }
 
+    static EnqueueTaskChain<chain_mode>
+    create_non_ptr(Rc<MutexCvObject<std::queue<int>>> queue,
+            std::vector<int> elements_to_enqueue)
+    {
+        std::ranges::reverse(elements_to_enqueue);
+        return EnqueueTaskChain(
+            std::move(queue), std::move(elements_to_enqueue), EnqueueTaskChain<chain_mode>::Stage::acquire);
+    }
+
     StepResult step(SingleThreadedExecutor &) override
     {
         switch (stage)
@@ -736,7 +747,53 @@ std::unique_ptr<MainTask> main_task()
 }
 } // namespace return_type_test
 
-void test1()
+namespace composite_task_test
+{
+using rc_queue_test::EnqueueTaskChain;
+using rc_queue_test::EnqueueTask;
+using rc_queue_test::GuaranteedDequeueTask;
+
+struct MainTask final : public Task
+{
+    unsigned state = 0;
+    Rc<MutexCvObject<std::queue<int>>> queue;
+    MainTask()
+        : Task("MainTask"), queue(Rc<MutexCvObject<std::queue<int>>>::create())
+    {
+    }
+    StepResult step(SingleThreadedExecutor &executor) override
+    {
+        switch (state++)
+        {
+        case 0:
+        {
+            auto tasks = make_independent_tasks(
+                EnqueueTaskChain<true>::create_non_ptr(queue, {1, 2, 3, 4}),
+                EnqueueTaskChain<false>::create_non_ptr(queue, {1, 2, 3, 4, 5}),
+                EnqueueTaskChain<true>::create_non_ptr(queue, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),
+                EnqueueTask(queue, 100),
+                GuaranteedDequeueTask(queue),
+                GuaranteedDequeueTask(queue)
+            );
+
+            return step_result::Wait(step_result::Wait::task_not_done, make_vector_unique<Task>(std::move(tasks)));
+        }
+        case 1:
+        {
+            std::vector<std::unique_ptr<Task>> tasks;
+            for (int i = 0; i < 18; ++i)
+                tasks.push_back(std::make_unique<GuaranteedDequeueTask>(queue));
+            return step_result::Wait(step_result::Wait::task_automatically_done,
+                                     std::move(tasks));
+        }
+        default:
+            throw std::runtime_error("Unreachable");
+        }
+    }
+};
+}
+
+void test0()
 {
     using namespace queue_test;
     SingleThreadedExecutor executor;
@@ -745,7 +802,7 @@ void test1()
     executor.run_until_completion();
 }
 
-void test2()
+void test1()
 {
     using namespace rc_queue_test;
     SingleThreadedExecutor executor;
@@ -754,7 +811,7 @@ void test2()
     executor.run_until_completion();
 }
 
-void test3()
+void test2()
 {
     using namespace queue_coroutine_test;
     SingleThreadedExecutor executor;
@@ -763,7 +820,7 @@ void test3()
     executor.run_until_completion();
 }
 
-void test4()
+void test3()
 {
     using namespace return_type_test;
     SingleThreadedExecutor executor;
@@ -771,9 +828,17 @@ void test4()
     executor.run_until_completion();
 }
 
+void test4()
+{
+    using namespace composite_task_test;
+    SingleThreadedExecutor executor;
+    executor.add_task(std::make_unique<MainTask>());
+    executor.run_until_completion();
+}
+
 int main(int argc, char const **argv)
 {
-    std::array tests{test1, test2, test3, test4};
+    std::array tests{test0, test1, test2, test3, test4};
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s <test_number>\n", program_invocation_name);

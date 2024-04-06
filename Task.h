@@ -1,7 +1,10 @@
 #pragma once
-#include "Waker.h"
-#include "declarations.h"
-#include "StepResult.h"
+#include "utilities.h"
+#include "Waker.decl.h"
+#include "Executor.decl.h"
+#include "StepResult.decl.h"
+#include <optional>
+#include <functional>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -19,12 +22,9 @@ private:
 public:
     Task(std::string name) : name(std::move(name)) {}
     Task(Task const &) = delete;
-    Task(Task &&) = default;
-    virtual StepResult step(SingleThreadedExecutor &executor) { return step_result::Done(); }
-    virtual StepResult step(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values)
-    {
-        return step(executor);
-    }
+    Task(Task &&) noexcept = default;
+    virtual StepResult step(SingleThreadedExecutor &executor);
+    virtual StepResult step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values);
     void done()
     {
         for (auto &callback : on_done_callbacks)
@@ -47,106 +47,6 @@ public:
     SleepingTask(std::unique_ptr<SleepingTask> next, std::unique_ptr<Task> task, bool destroy_on_wake);
 };
 
-struct Mutex
-{
-    bool is_acquired = false;
-    std::unique_ptr<Waker> waker; // mutex queue
-    Mutex();
-};
-
-template <typename T>
-struct MutexGuardedObject
-{
-    Mutex mutex;
-    T object;
-    MutexGuardedObject()
-        : object()
-    {
-    }
-    MutexGuardedObject(T object)
-        : object(std::move(object))
-    {
-    }
-};
-
-struct ConditionVariable
-{
-    std::unique_ptr<Waker> waker; // cv queue
-    ConditionVariable();
-};
-
-class MutexAcquireTask final : public Task
-{
-    Mutex &mutex;
-public:
-    MutexAcquireTask(Mutex &mutex) : Task("MutexAcquireTask"), mutex(mutex) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
-class RcMutexAcquireTask final : public Task
-{
-    Rc<Mutex> mutex;
-public:
-    RcMutexAcquireTask(Rc<Mutex> mutex) : Task("MutexAcquireTask"), mutex(std::move(mutex)) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
-class MutexReleaseTask final : public Task
-{
-    Mutex &mutex;
-public:
-    MutexReleaseTask(Mutex &mutex) : Task("MutexReleaseTask"), mutex(mutex) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
-class RcMutexReleaseTask final : public Task
-{
-    Rc<Mutex> mutex;
-public:
-    RcMutexReleaseTask(Rc<Mutex> mutex) : Task("MutexReleaseTask"), mutex(std::move(mutex)) {}
-    StepResult step(SingleThreadedExecutor &) override; 
-};
-
-class ConditionVariableWaitTask final : public Task
-{
-    Mutex &mutex;
-    ConditionVariable &cv;
-    unsigned stage = 0;
-public:
-    ConditionVariableWaitTask(Mutex &mutex, ConditionVariable &cv) : Task("ConditionVariableWaitTask"), mutex(mutex), cv(cv) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
-class RcConditionVariableWaitTask final : public Task
-{
-    Rc<Mutex> mutex;
-    Rc<ConditionVariable> cv;
-    unsigned stage = 0;
-public:
-    RcConditionVariableWaitTask(Rc<Mutex> mutex, Rc<ConditionVariable> cv) : Task("ConditionVariableWaitTask"), mutex(std::move(mutex)), cv(std::move(cv)) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
-class ConditionVariableNotifyTask final : public Task
-{
-    bool notify_all;
-    ConditionVariable &cv;
-public:
-    ConditionVariableNotifyTask(bool notify_all, ConditionVariable &cv) 
-        : Task("ConditionVariableNotifyTask"), notify_all(notify_all), cv(cv) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
-class RcConditionVariableNotifyTask final : public Task
-{
-    bool notify_all;
-    Rc<ConditionVariable> cv;
-public:
-    RcConditionVariableNotifyTask(bool notify_all, Rc<ConditionVariable> cv) 
-        : Task("ConditionVariableNotifyTask"), notify_all(notify_all), cv(std::move(cv)) {}
-    StepResult step(SingleThreadedExecutor &) override;
-};
-
 class EpollTask : public Task
 {
     int epoll_fd;
@@ -155,7 +55,7 @@ protected:
 public:
     EpollTask(int epoll_fd) : Task("EpollTask"), epoll_fd(epoll_fd) {}
     StepResult step(SingleThreadedExecutor &) override;
-    virtual ~EpollTask()
+    ~EpollTask()
     {
         if (close(epoll_fd) == -1)
             perror("close epoll_fd: ");
@@ -164,6 +64,7 @@ public:
 
 class Handler 
 {
+protected:
     int fd;
 public:
     // nullptr means no Task needed to be spawned

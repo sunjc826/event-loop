@@ -1,113 +1,20 @@
 #include "Task.h"
 #include "Executor.h"
 #include "StepResult.h"
-#include "declarations.h"
 #include <memory>
 #include <stdexcept>
 #include <sys/epoll.h>
 #include <span>
-Mutex::Mutex() : waker(std::make_unique<FifoWaker>()) {}
-ConditionVariable::ConditionVariable() : waker(std::make_unique<FifoWaker>()) {}
-StepResult MutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unused]]) 
-{
-    if (!mutex.is_acquired)
-    {
-        mutex.is_acquired = true;
-        return step_result::Done();
-    }
-    else
-        return step_result::Wait(
-            step_result::Wait::task_not_done, 
-            step_result::WaitForWaker(*mutex.waker.get()));
+#include <cstring>
+
+StepResult Task::step(SingleThreadedExecutor &executor) 
+{ 
+    return step_result::Done(); 
 }
 
-StepResult RcMutexAcquireTask::step(SingleThreadedExecutor &executor [[maybe_unused]]) 
+StepResult Task::step_with_result(SingleThreadedExecutor &executor, std::vector<std::optional<std::unique_ptr<void, TypeErasedDeleter>>> child_return_values)
 {
-    if (!mutex->is_acquired)
-    {
-        mutex->is_acquired = true;
-        return step_result::Done();
-    }
-    else
-        return step_result::Wait(
-            step_result::Wait::task_not_done,
-            step_result::WaitForWaker(*mutex->waker.get()));
-}
-
-StepResult MutexReleaseTask::step(SingleThreadedExecutor &executor)
-{
-    mutex.is_acquired = false;
-    if (mutex.waker->has_waiters())
-        mutex.waker->wake_one(executor);
-    return step_result::Done();
-}
-
-StepResult RcMutexReleaseTask::step(SingleThreadedExecutor &executor)
-{
-    mutex->is_acquired = false;
-    if (mutex->waker->has_waiters())
-        mutex->waker->wake_one(executor);
-    return step_result::Done();
-}
-
-StepResult ConditionVariableWaitTask::step(SingleThreadedExecutor &executor)
-{
-    switch (stage++)
-    {
-    case 0:
-        mutex.is_acquired = false;
-        if (mutex.waker->has_waiters())
-            mutex.waker->wake_one(executor);
-        return step_result::Wait(step_result::Wait::task_not_done, step_result::WaitForWaker(*cv.waker.get()));
-    case 1:
-        return step_result::Wait(step_result::Wait::task_automatically_done, step_result::WaitForChildTasks(make_vector_unique<Task>(MutexAcquireTask(mutex))));
-    default:
-        throw std::runtime_error("Unreachable");
-    }
-}
-
-StepResult RcConditionVariableWaitTask::step(SingleThreadedExecutor &executor)
-{
-    switch (stage++)
-    {
-    case 0:
-        mutex->is_acquired = false;
-        if (mutex->waker->has_waiters())
-            mutex->waker->wake_one(executor);
-        return step_result::Wait(
-            step_result::Wait::task_not_done, 
-            step_result::WaitForWaker(*cv->waker.get()));
-    case 1:
-        return step_result::Wait(
-            step_result::Wait::task_automatically_done, 
-            step_result::WaitForChildTasks(make_vector_unique<Task>(RcMutexAcquireTask(mutex))));
-    default:
-        throw std::runtime_error("Unreachable");
-    }
-}
-
-StepResult ConditionVariableNotifyTask::step(SingleThreadedExecutor &executor)
-{
-    if (cv.waker->has_waiters())
-    {
-        if (notify_all)
-            cv.waker->wake_all(executor);
-        else
-            cv.waker->wake_one(executor);
-    }
-    return step_result::Done();
-}
-
-StepResult RcConditionVariableNotifyTask::step(SingleThreadedExecutor &executor)
-{
-    if (cv->waker->has_waiters())
-    {
-        if (notify_all)
-            cv->waker->wake_all(executor);
-        else
-            cv->waker->wake_one(executor);
-    }
-    return step_result::Done();
+    return step(executor);
 }
 
 void EpollTask::execute(SingleThreadedExecutor &executor)
